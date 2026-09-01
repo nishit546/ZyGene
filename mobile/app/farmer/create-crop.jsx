@@ -63,79 +63,77 @@ export default function CreateCrop() {
   }, []);
 
   const handleCreateCrop = async () => {
-    if (!fieldId) {
-      Alert.alert(
-        "Missing Information",
-        "Please select a field."
-      );
-      return;
-    }
+  console.log("CREATE CROP CLICKED");
 
-    if (!cropName.trim()) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter a crop name."
-      );
-      return;
-    }
+  if (!fieldId) {
+    Alert.alert(
+      "Missing Information",
+      "Please select a field."
+    );
+    return;
+  }
 
-    try {
-      setLoading(true);
+  if (!cropName.trim()) {
+    Alert.alert(
+      "Missing Information",
+      "Please enter a crop name."
+    );
+    return;
+  }
 
-      const response = await API.post("/crops", {
-        field_id: Number(fieldId),
+  try {
+    setLoading(true);
 
-        crop_name: cropName.trim(),
+    const payload = {
+      field_id: Number(fieldId),
+      crop_name: cropName.trim(),
+      variety: variety.trim() || null,
+      sowing_date: sowingDate.trim() || null,
+      expected_harvest_date:
+        expectedHarvestDate.trim() || null,
+      notes: notes.trim() || null,
+    };
 
-        variety:
-          variety.trim() || null,
+    console.log("CROP PAYLOAD:", payload);
 
-        sowing_date:
-          sowingDate.trim() || null,
+    const response = await API.post(
+      "/crops",
+      payload
+    );
 
-        expected_harvest_date:
-          expectedHarvestDate.trim() || null,
+    console.log(
+      "CROP CREATED:",
+      response.data
+    );
 
-        notes:
-          notes.trim() || null,
-      });
+    // Navigate immediately after successful creation
+    router.replace("/farmer/dashboard");
 
-      console.log(
-        "CROP CREATED:",
-        response.data
-      );
+  } catch (error) {
+    console.log(
+      "CREATE CROP ERROR:",
+      error
+    );
 
-      Alert.alert(
-        "Success",
-        "Crop created successfully.",
-        [
-          {
-            text: "OK",
-            onPress: () =>
-              router.replace(
-                "/farmer/dashboard"
-              ),
-          },
-        ]
-      );
+    console.log(
+      "STATUS:",
+      error.response?.status
+    );
 
-    } catch (error) {
-      console.log(
-        "CREATE CROP ERROR:",
-        error.response?.data ||
-          error.message
-      );
+    console.log(
+      "SERVER ERROR:",
+      error.response?.data
+    );
 
-      Alert.alert(
-        "Error",
-        error.response?.data?.message ||
-          "Failed to create crop."
-      );
-
-    } finally {
-      setLoading(false);
-    }
-  };
+    Alert.alert(
+      "Error",
+      error.response?.data?.message ||
+        "Failed to create crop."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (loadingFields) {
     return (

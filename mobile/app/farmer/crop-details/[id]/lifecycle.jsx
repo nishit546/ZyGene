@@ -68,9 +68,7 @@ export default function Lifecycle() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  // ========================================
   // LOAD LIFECYCLE RECORDS
-  // ========================================
 
   const loadLifecycle = async () => {
     try {
@@ -103,9 +101,7 @@ export default function Lifecycle() {
     }
   };
 
-  // ========================================
   // LOAD WHEN SCREEN OPENS
-  // ========================================
 
   useEffect(() => {
     if (id) {
@@ -113,9 +109,7 @@ export default function Lifecycle() {
     }
   }, [id]);
 
-  // ========================================
   // CREATE LIFECYCLE RECORD
-  // ========================================
 
   const handleCreateRecord = async () => {
     console.log(
@@ -245,9 +239,7 @@ export default function Lifecycle() {
     }
   };
 
-  // ========================================
   // LOADING
-  // ========================================
 
   if (loading) {
     return (
@@ -267,9 +259,7 @@ export default function Lifecycle() {
     );
   }
 
-  // ========================================
   // SCREEN
-  // ========================================
 
   return (
     <ScrollView
@@ -285,9 +275,7 @@ export default function Lifecycle() {
         Crop ID: {id}
       </Text>
 
-      {/* ================================= */}
       {/* LIFECYCLE RECORDS */}
-      {/* ================================= */}
 
       <Text style={styles.sectionTitle}>
         Lifecycle Records
@@ -305,9 +293,7 @@ export default function Lifecycle() {
             key={record.id}
             style={styles.recordCard}
           >
-            {/* ============================ */}
             {/* STAGE */}
-            {/* ============================ */}
 
             <Text style={styles.stage}>
               {STAGES.find(
@@ -318,18 +304,14 @@ export default function Lifecycle() {
                 record.stage}
             </Text>
 
-            {/* ============================ */}
             {/* DATE */}
-            {/* ============================ */}
 
             <Text style={styles.recordText}>
               Date:{" "}
               {record.record_date}
             </Text>
 
-            {/* ============================ */}
             {/* TIME */}
-            {/* ============================ */}
 
             {record.record_time && (
               <Text style={styles.recordText}>
@@ -338,9 +320,7 @@ export default function Lifecycle() {
               </Text>
             )}
 
-            {/* ============================ */}
             {/* LOCATION */}
-            {/* ============================ */}
 
             {record.latitude !== null &&
               record.latitude !== undefined &&
@@ -356,9 +336,7 @@ export default function Lifecycle() {
                 </Text>
               )}
 
-            {/* ============================ */}
             {/* NOTES */}
-            {/* ============================ */}
 
             {record.notes && (
               <Text
@@ -368,9 +346,7 @@ export default function Lifecycle() {
               </Text>
             )}
 
-            {/* ============================ */}
             {/* MEASUREMENTS */}
-            {/* ============================ */}
 
             <TouchableOpacity
               style={
@@ -391,9 +367,7 @@ export default function Lifecycle() {
               </Text>
             </TouchableOpacity>
 
-            {/* ============================ */}
             {/* PHOTOS */}
-            {/* ============================ */}
 
             <TouchableOpacity
               style={styles.photoButton}
@@ -412,9 +386,7 @@ export default function Lifecycle() {
               </Text>
             </TouchableOpacity>
 
-            {/* ============================ */}
             {/* IRRIGATION */}
-            {/* ============================ */}
 
             <TouchableOpacity
               style={
@@ -435,9 +407,7 @@ export default function Lifecycle() {
               </Text>
             </TouchableOpacity>
 
-            {/* ============================ */}
             {/* TREATMENTS */}
-            {/* ============================ */}
 
             <TouchableOpacity
               style={
@@ -457,13 +427,33 @@ export default function Lifecycle() {
                 View Treatments
               </Text>
             </TouchableOpacity>
+
+
+{/* DISEASE-PEST */}
+            
+            <TouchableOpacity
+  style={styles.diseasePestButton}
+  onPress={() => {
+    console.log(
+      "DISEASE PEST CLICKED:",
+      id,
+      record.id
+    );
+
+    router.push(
+      `/farmer/crop-details/${id}/disease-pest/${record.id}`
+    );
+  }}
+>
+  <Text style={styles.diseasePestButtonText}>
+    View Disease & Pest
+  </Text>
+</TouchableOpacity>
           </View>
         ))
       )}
 
-      {/* ================================= */}
       {/* ADD LIFECYCLE RECORD */}
-      {/* ================================= */}
 
       <Text style={styles.sectionTitle}>
         Add Lifecycle Record
@@ -605,9 +595,7 @@ export default function Lifecycle() {
   );
 }
 
-// ========================================
 // STYLES
-// ========================================
 
 const styles = StyleSheet.create({
   container: {
@@ -657,9 +645,7 @@ const styles = StyleSheet.create({
     color: "#777",
   },
 
-  // =====================================
   // RECORD CARD
-  // =====================================
 
   recordCard: {
     borderWidth: 1,
@@ -681,9 +667,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // =====================================
   // MEASUREMENTS
-  // =====================================
 
   measurementButton: {
     marginTop: 14,
@@ -699,9 +683,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // =====================================
   // PHOTOS
-  // =====================================
 
   photoButton: {
     marginTop: 10,
@@ -717,9 +699,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // =====================================
   // IRRIGATION
-  // =====================================
 
   irrigationButton: {
     marginTop: 10,
@@ -735,9 +715,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // =====================================
   // TREATMENTS
-  // =====================================
 
   treatmentButton: {
     marginTop: 10,
@@ -753,9 +731,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // =====================================
   // FORM
-  // =====================================
 
   label: {
     fontSize: 15,
@@ -823,4 +799,17 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "bold",
   },
+  diseasePestButton: {
+  marginTop: 10,
+  borderWidth: 1,
+  borderColor: "#c62828",
+  padding: 12,
+  borderRadius: 8,
+  alignItems: "center",
+},
+
+diseasePestButtonText: {
+  color: "#c62828",
+  fontWeight: "bold",
+},
 });

@@ -101,6 +101,13 @@ export default function RootLayout() {
     title: "Treatments",
   }}
 />
+
+<Stack.Screen
+  name="farmer/crop-details/[id]/disease-pest/[recordId]"
+  options={{
+    title: "Disease & Pest",
+  }}
+/>
     </Stack>
     
   );
