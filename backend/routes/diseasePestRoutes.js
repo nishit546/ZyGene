@@ -3,17 +3,33 @@ const express = require("express");
 const router = express.Router();
 
 const {
-  createDiseasePestObservation,
-} = require("../controllers/diseasePestController");
+  createObservation,
+  getObservationsByLifecycle,
+} = require(
+  "../controllers/diseasePestController"
+);
 
 const authenticateUser = require(
   "../middleware/authMiddleware"
 );
 
+
+// Create observation
+
 router.post(
   "/",
   authenticateUser,
-  createDiseasePestObservation
+  createObservation
 );
+
+
+// Get observations for lifecycle record
+
+router.get(
+  "/:lifecycleRecordId",
+  authenticateUser,
+  getObservationsByLifecycle
+);
+
 
 module.exports = router;

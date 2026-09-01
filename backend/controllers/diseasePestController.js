@@ -1,6 +1,10 @@
 const db = require("../config/db");
 
-const createDiseasePestObservation = (req, res) => {
+// ========================================
+// CREATE DISEASE / PEST OBSERVATION
+// ========================================
+
+const createObservation = (req, res) => {
   const user_id = req.user.id;
 
   const {
@@ -25,15 +29,19 @@ const createDiseasePestObservation = (req, res) => {
     });
   }
 
+  // ========================================
+  // CHECK OWNERSHIP
+  // ========================================
+
   const checkQuery = `
-    select lifecycle_records.id
-    from lifecycle_records
-    inner join crops
-      on lifecycle_records.crop_id = crops.id
-    inner join fields
-      on crops.field_id = fields.id
-    where lifecycle_records.id = ?
-      and fields.user_id = ?
+    SELECT lifecycle_records.id
+    FROM lifecycle_records
+    INNER JOIN crops
+      ON lifecycle_records.crop_id = crops.id
+    INNER JOIN fields
+      ON crops.field_id = fields.id
+    WHERE lifecycle_records.id = ?
+      AND fields.user_id = ?
   `;
 
   db.query(
@@ -41,7 +49,10 @@ const createDiseasePestObservation = (req, res) => {
     [lifecycle_record_id, user_id],
     (error, results) => {
       if (error) {
-        console.error("Check disease/pest error:", error);
+        console.error(
+          "Check observation error:",
+          error
+        );
 
         return res.status(500).json({
           message: "Database error",
@@ -55,8 +66,12 @@ const createDiseasePestObservation = (req, res) => {
         });
       }
 
+      // ========================================
+      // INSERT OBSERVATION
+      // ========================================
+
       const insertQuery = `
-        insert into disease_pest_observations (
+        INSERT INTO disease_pest_observations (
           lifecycle_record_id,
           observation_type,
           name,
@@ -65,7 +80,7 @@ const createDiseasePestObservation = (req, res) => {
           observation_date,
           notes
         )
-        values (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `;
 
       db.query(
@@ -82,7 +97,7 @@ const createDiseasePestObservation = (req, res) => {
         (error, result) => {
           if (error) {
             console.error(
-              "Create disease/pest error:",
+              "Create observation error:",
               error
             );
 
@@ -113,6 +128,75 @@ const createDiseasePestObservation = (req, res) => {
   );
 };
 
+
+// ========================================
+// GET DISEASE / PEST OBSERVATIONS
+// ========================================
+
+const getObservationsByLifecycle = (
+  req,
+  res
+) => {
+  const user_id = req.user.id;
+
+  const lifecycle_record_id =
+    req.params.lifecycleRecordId;
+
+  const query = `
+    SELECT disease_pest_observations.*
+    FROM disease_pest_observations
+
+    INNER JOIN lifecycle_records
+      ON disease_pest_observations.lifecycle_record_id =
+         lifecycle_records.id
+
+    INNER JOIN crops
+      ON lifecycle_records.crop_id =
+         crops.id
+
+    INNER JOIN fields
+      ON crops.field_id =
+         fields.id
+
+    WHERE disease_pest_observations.lifecycle_record_id = ?
+      AND fields.user_id = ?
+
+    ORDER BY
+      disease_pest_observations.observation_date ASC,
+      disease_pest_observations.created_at ASC
+  `;
+
+  db.query(
+    query,
+    [
+      lifecycle_record_id,
+      user_id,
+    ],
+    (error, results) => {
+      if (error) {
+        console.error(
+          "Get observations error:",
+          error
+        );
+
+        return res.status(500).json({
+          message:
+            "Failed to fetch disease/pest observations",
+        });
+      }
+
+      res.status(200).json({
+        message:
+          "Disease/pest observations fetched successfully",
+
+        observations: results,
+      });
+    }
+  );
+};
+
+
 module.exports = {
-  createDiseasePestObservation,
+  createObservation,
+  getObservationsByLifecycle,
 };

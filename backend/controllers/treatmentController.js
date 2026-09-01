@@ -1,5 +1,9 @@
 const db = require("../config/db");
 
+// ========================================
+// CREATE TREATMENT RECORD
+// ========================================
+
 const createTreatment = (req, res) => {
   const user_id = req.user.id;
 
@@ -14,6 +18,8 @@ const createTreatment = (req, res) => {
     notes,
   } = req.body;
 
+  // Required fields
+
   if (
     !lifecycle_record_id ||
     !treatment_type ||
@@ -25,23 +31,36 @@ const createTreatment = (req, res) => {
     });
   }
 
+  // ========================================
+  // CHECK OWNERSHIP
+  // ========================================
+
   const checkQuery = `
     select lifecycle_records.id
     from lifecycle_records
+
     inner join crops
       on lifecycle_records.crop_id = crops.id
+
     inner join fields
       on crops.field_id = fields.id
+
     where lifecycle_records.id = ?
       and fields.user_id = ?
   `;
 
   db.query(
     checkQuery,
-    [lifecycle_record_id, user_id],
+    [
+      lifecycle_record_id,
+      user_id,
+    ],
     (error, results) => {
       if (error) {
-        console.error("Check treatment error:", error);
+        console.error(
+          "Check treatment error:",
+          error
+        );
 
         return res.status(500).json({
           message: "Database error",
@@ -55,8 +74,12 @@ const createTreatment = (req, res) => {
         });
       }
 
+      // ========================================
+      // INSERT TREATMENT
+      // ========================================
+
       const insertQuery = `
-       insert into treatment_records (
+        insert into treatment_records (
           lifecycle_record_id,
           treatment_type,
           product_name,
@@ -89,12 +112,15 @@ const createTreatment = (req, res) => {
             );
 
             return res.status(500).json({
-              message: "Failed to create treatment",
+              message:
+                "Failed to create treatment record",
             });
           }
 
           res.status(201).json({
-            message: "Treatment created successfully",
+            message:
+              "Treatment record created successfully",
+
             treatment: {
               id: result.insertId,
               lifecycle_record_id,
@@ -113,6 +139,78 @@ const createTreatment = (req, res) => {
   );
 };
 
+
+// ========================================
+// GET TREATMENT RECORDS
+// ========================================
+
+const getTreatmentsByLifecycle = (
+  req,
+  res
+) => {
+  const user_id = req.user.id;
+
+  const lifecycle_record_id =
+    req.params.lifecycleRecordId;
+
+  const query = `
+    select treatment_records.*
+    from treatment_records
+
+    inner join lifecycle_records
+      on treatment_records.lifecycle_record_id =
+         lifecycle_records.id
+
+    inner join crops
+      on lifecycle_records.crop_id =
+         crops.id
+
+    inner join fields
+      on crops.field_id =
+         fields.id
+
+    where treatment_records.lifecycle_record_id = ?
+      and fields.user_id = ?
+
+    order by treatment_records.application_date asc,
+             treatment_records.created_at asc
+  `;
+
+  db.query(
+    query,
+    [
+      lifecycle_record_id,
+      user_id,
+    ],
+    (error, results) => {
+      if (error) {
+        console.error(
+          "Get treatments error:",
+          error
+        );
+
+        return res.status(500).json({
+          message:
+            "Failed to fetch treatment records",
+        });
+      }
+
+      res.status(200).json({
+        message:
+          "Treatment records fetched successfully",
+
+        treatments: results,
+      });
+    }
+  );
+};
+
+
+// ========================================
+// EXPORT
+// ========================================
+
 module.exports = {
   createTreatment,
+  getTreatmentsByLifecycle,
 };

@@ -1,5 +1,10 @@
 const db = require("../config/db");
 
+
+// ========================================
+// CREATE PHOTO
+// ========================================
+
 const createPhoto = (req, res) => {
   const user_id = req.user.id;
 
@@ -17,7 +22,6 @@ const createPhoto = (req, res) => {
     });
   }
 
-  // Check ownership of lifecycle record
   const checkQuery = `
     select lifecycle_records.id
     from lifecycle_records
@@ -34,7 +38,10 @@ const createPhoto = (req, res) => {
     [lifecycle_record_id, user_id],
     (error, results) => {
       if (error) {
-        console.error("Check photo error:", error);
+        console.error(
+          "Check photo error:",
+          error
+        );
 
         return res.status(500).json({
           message: "Database error",
@@ -79,7 +86,9 @@ const createPhoto = (req, res) => {
           }
 
           res.status(201).json({
-            message: "Photo added successfully",
+            message:
+              "Photo added successfully",
+
             photo: {
               id: result.insertId,
               lifecycle_record_id,
@@ -94,6 +103,74 @@ const createPhoto = (req, res) => {
   );
 };
 
+
+// ========================================
+// GET PHOTOS
+// ========================================
+
+const getPhotos = (req, res) => {
+  const user_id = req.user.id;
+
+  const lifecycle_record_id =
+    req.params.lifecycleRecordId;
+
+  const query = `
+    select crop_photos.*
+    from crop_photos
+
+    inner join lifecycle_records
+      on crop_photos.lifecycle_record_id =
+         lifecycle_records.id
+
+    inner join crops
+      on lifecycle_records.crop_id =
+         crops.id
+
+    inner join fields
+      on crops.field_id =
+         fields.id
+
+    where crop_photos.lifecycle_record_id = ?
+      and fields.user_id = ?
+
+    order by crop_photos.created_at asc
+  `;
+
+  db.query(
+    query,
+    [
+      lifecycle_record_id,
+      user_id,
+    ],
+    (error, results) => {
+      if (error) {
+        console.error(
+          "Get photos error:",
+          error
+        );
+
+        return res.status(500).json({
+          message:
+            "Failed to fetch photos",
+        });
+      }
+
+      res.status(200).json({
+        message:
+          "Photos fetched successfully",
+
+        photos: results,
+      });
+    }
+  );
+};
+
+
+// ========================================
+// EXPORT
+// ========================================
+
 module.exports = {
   createPhoto,
+  getPhotos,
 };

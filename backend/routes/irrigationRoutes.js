@@ -4,16 +4,32 @@ const router = express.Router();
 
 const {
   createIrrigation,
-} = require("../controllers/irrigationController");
+  getIrrigationByLifecycle,
+} = require(
+  "../controllers/irrigationController"
+);
 
 const authenticateUser = require(
   "../middleware/authMiddleware"
 );
+
+
+// Create irrigation record
 
 router.post(
   "/",
   authenticateUser,
   createIrrigation
 );
+
+
+// Get irrigation records
+
+router.get(
+  "/:lifecycleRecordId",
+  authenticateUser,
+  getIrrigationByLifecycle
+);
+
 
 module.exports = router;
