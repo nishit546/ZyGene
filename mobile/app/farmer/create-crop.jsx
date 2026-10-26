@@ -1,58 +1,61 @@
-import { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
   ActivityIndicator,
   ScrollView,
+  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
+  Modal,
+  TextInput,
 } from "react-native";
 import { router } from "expo-router";
-
+import { Ionicons } from "@expo/vector-icons";
 import API from "../../services/api";
+import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from "../../constants/theme";
+import FarmerHeader from "../../components/ui/FarmerHeader";
+import AppInput from "../../components/ui/AppInput";
+import AppButton from "../../components/ui/AppButton";
+
+const POPULAR_CROPS = ["Wheat", "Rice", "Cotton", "Maize", "Soybean", "Mustard"];
 
 export default function CreateCrop() {
   const [fields, setFields] = useState([]);
-
   const [fieldId, setFieldId] = useState("");
   const [cropName, setCropName] = useState("");
   const [variety, setVariety] = useState("");
-  const [sowingDate, setSowingDate] = useState("");
-  const [expectedHarvestDate, setExpectedHarvestDate] =
-    useState("");
+  const [sowingDate, setSowingDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [expectedHarvestDate, setExpectedHarvestDate] = useState("");
   const [notes, setNotes] = useState("");
 
-  const [loadingFields, setLoadingFields] =
-    useState(true);
+  const [loadingFields, setLoadingFields] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState("");
 
-  const [loading, setLoading] = useState(false);
+  // Modal State for Field Selector
+  const [isFieldModalVisible, setFieldModalVisible] = useState(false);
+  const [fieldSearch, setFieldSearch] = useState("");
 
-  // Fetch farmer's fields
   const loadFields = async () => {
     try {
+      setLoadingFields(true);
       const response = await API.get("/fields");
-
-      console.log(
-        "FIELDS FOR CROP:",
-        response.data
-      );
-
-      setFields(response.data.fields || []);
-
+      const fetchedFields = response.data?.fields || [];
+      setFields(fetchedFields);
+      if (fetchedFields.length === 1) {
+        setFieldId(String(fetchedFields[0].id));
+      }
     } catch (error) {
-      console.log(
-        "LOAD FIELDS ERROR:",
-        error.response?.data ||
-          error.message
-      );
-
-      Alert.alert(
-        "Error",
-        "Failed to load your fields."
-      );
-
+      console.log("LOAD FIELDS ERROR:", error.response?.data || error.message);
+      setApiError("Failed to load fields. Please try again.");
     } finally {
       setLoadingFields(false);
     }
@@ -63,370 +66,588 @@ export default function CreateCrop() {
   }, []);
 
   const handleCreateCrop = async () => {
-  console.log("CREATE CROP CLICKED");
+    setErrors({});
+    setApiError("");
+    let newErrors = {};
 
-  if (!fieldId) {
-    Alert.alert(
-      "Missing Information",
-      "Please select a field."
+    if (!cropName.trim()) {
+      newErrors.cropName = "Crop name is required.";
+    }
+
+    if (!fieldId) {
+      newErrors.fieldId = "Please select a field.";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    if (submitting) return;
+
+    try {
+      setSubmitting(true);
+
+      const payload = {
+        field_id: Number(fieldId),
+        crop_name: cropName.trim(),
+        variety: variety.trim() || null,
+        sowing_date: sowingDate.trim() || null,
+        expected_harvest_date: expectedHarvestDate.trim() || null,
+        notes: notes.trim() || null,
+      };
+
+      const res = await API.post("/crops", payload);
+      const createdId = res.data?.crop?.id || res.data?.id || res.data?.crop_id;
+
+      router.replace(createdId ? `/farmer/crop-details/${createdId}` : "/farmer/crops");
+    } catch (error) {
+      console.log("CREATE CROP ERROR:", error.response?.data || error.message);
+      setApiError(error.response?.data?.message || "Unable to create crop. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectedField = useMemo(() => {
+    return fields.find((f) => String(f.id) === String(fieldId));
+  }, [fields, fieldId]);
+
+  const filteredFields = useMemo(() => {
+    if (!fieldSearch.trim()) return fields;
+    const q = fieldSearch.toLowerCase().trim();
+    return fields.filter(
+      (f) =>
+        (f.field_name || "").toLowerCase().includes(q) ||
+        (f.location || "").toLowerCase().includes(q)
     );
-    return;
-  }
-
-  if (!cropName.trim()) {
-    Alert.alert(
-      "Missing Information",
-      "Please enter a crop name."
-    );
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    const payload = {
-      field_id: Number(fieldId),
-      crop_name: cropName.trim(),
-      variety: variety.trim() || null,
-      sowing_date: sowingDate.trim() || null,
-      expected_harvest_date:
-        expectedHarvestDate.trim() || null,
-      notes: notes.trim() || null,
-    };
-
-    console.log("CROP PAYLOAD:", payload);
-
-    const response = await API.post(
-      "/crops",
-      payload
-    );
-
-    console.log(
-      "CROP CREATED:",
-      response.data
-    );
-
-    // Navigate immediately after successful creation
-    router.replace("/farmer/dashboard");
-
-  } catch (error) {
-    console.log(
-      "CREATE CROP ERROR:",
-      error
-    );
-
-    console.log(
-      "STATUS:",
-      error.response?.status
-    );
-
-    console.log(
-      "SERVER ERROR:",
-      error.response?.data
-    );
-
-    Alert.alert(
-      "Error",
-      error.response?.data?.message ||
-        "Failed to create crop."
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+  }, [fields, fieldSearch]);
 
   if (loadingFields) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-
-        <Text style={styles.loadingText}>
-          Loading fields...
-        </Text>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading farm fields...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-    >
-      <Text style={styles.title}>
-        Create Crop
-      </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
 
-      <Text style={styles.subtitle}>
-        Add a crop to one of your fields
-      </Text>
-
-      {/* Field */}
-
-      <Text style={styles.label}>
-        Select Field *
-      </Text>
-
-      {fields.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text>
-            You don't have any fields yet.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() =>
-              router.push(
-                "/farmer/create-field"
-              )
-            }
-          >
-            <Text style={styles.secondaryButtonText}>
-              + Create Field
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        fields.map((field) => (
-          <TouchableOpacity
-            key={field.id}
-            style={[
-              styles.fieldOption,
-              fieldId === String(field.id) &&
-                styles.selectedField,
-            ]}
-            onPress={() =>
-              setFieldId(String(field.id))
-            }
-          >
-            <Text
-              style={[
-                styles.fieldText,
-                fieldId === String(field.id) &&
-                  styles.selectedFieldText,
-              ]}
-            >
-              {field.field_name}
-            </Text>
-
-            {field.location_name && (
-              <Text style={styles.locationText}>
-                {field.location_name}
-              </Text>
-            )}
-          </TouchableOpacity>
-        ))
-      )}
-
-      {/* Crop Name */}
-
-      <Text style={styles.label}>
-        Crop Name *
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. Wheat"
-        value={cropName}
-        onChangeText={setCropName}
+      {/* Header */}
+      <FarmerHeader
+        title="Create Crop"
+        subtitle="Add a crop and start tracking its lifecycle."
+        showBack={true}
       />
 
-      {/* Variety */}
-
-      <Text style={styles.label}>
-        Variety
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. GW-322"
-        value={variety}
-        onChangeText={setVariety}
-      />
-
-      {/* Sowing Date */}
-
-      <Text style={styles.label}>
-        Sowing Date
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="YYYY-MM-DD"
-        value={sowingDate}
-        onChangeText={setSowingDate}
-      />
-
-      {/* Expected Harvest Date */}
-
-      <Text style={styles.label}>
-        Expected Harvest Date
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="YYYY-MM-DD"
-        value={expectedHarvestDate}
-        onChangeText={
-          setExpectedHarvestDate
-        }
-      />
-
-      {/* Notes */}
-
-      <Text style={styles.label}>
-        Notes
-      </Text>
-
-      <TextInput
-        style={[
-          styles.input,
-          styles.notesInput,
-        ]}
-        placeholder="Additional notes..."
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={4}
-      />
-
-      {/* Create */}
-
-      {fields.length > 0 && (
-        <TouchableOpacity
-          style={[
-            styles.button,
-            loading &&
-              styles.buttonDisabled,
-          ]}
-          onPress={handleCreateCrop}
-          disabled={loading}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboardContainer}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>
-              Create Crop
+          {apiError ? (
+            <View style={styles.apiErrorContainer}>
+              <Text style={styles.apiErrorText}>{apiError}</Text>
+            </View>
+          ) : null}
+
+          {/* SECTION 1: CROP INFORMATION */}
+          <Text style={styles.sectionHeader}>CROP INFORMATION</Text>
+          <View style={styles.sectionCard}>
+            <Text style={styles.chipGroupLabel}>Popular Crops</Text>
+            <View style={styles.chipRow}>
+              {POPULAR_CROPS.map((name) => {
+                const isSelected = cropName.toLowerCase() === name.toLowerCase();
+                return (
+                  <TouchableOpacity
+                    key={name}
+                    style={[styles.chip, isSelected && styles.chipActive]}
+                    onPress={() => setCropName(name)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                      {name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <AppInput
+              label="Crop Name"
+              placeholder="e.g. Wheat"
+              value={cropName}
+              onChangeText={setCropName}
+              isRequired={true}
+              error={errors.cropName}
+            />
+
+            <AppInput
+              label="Variety"
+              placeholder="e.g. HD-2967"
+              value={variety}
+              onChangeText={setVariety}
+            />
+          </View>
+
+          {/* SECTION 2: FIELD */}
+          <Text style={styles.sectionHeader}>FIELD</Text>
+          <View style={[styles.sectionCard, errors.fieldId && { borderColor: COLORS.danger }]}>
+            <Text style={styles.chipGroupLabel}>
+              Select Field <Text style={styles.requiredAsterisk}>*</Text>
             </Text>
-          )}
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+
+            {fields.length === 0 ? (
+              <View style={styles.noFieldsBox}>
+                <Text style={styles.noFieldsText}>No fields available</Text>
+                <Text style={styles.noFieldsSub}>Create a field before adding a crop.</Text>
+                <TouchableOpacity
+                  style={styles.addFieldLink}
+                  onPress={() => router.push("/farmer/create-field")}
+                >
+                  <Text style={styles.addFieldLinkText}>Create Field</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.fieldSelectorBox}
+                onPress={() => setFieldModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                {selectedField ? (
+                  <View style={styles.fieldSelectorContent}>
+                    <View style={styles.fieldSelectorInfo}>
+                      <Text style={styles.selectedFieldName}>{selectedField.field_name}</Text>
+                      <Text style={styles.selectedFieldMeta}>
+                        {selectedField.location || "No Location"} •{" "}
+                        {selectedField.area ? `${selectedField.area} ${selectedField.area_unit || "acres"}` : "No Area"}
+                      </Text>
+                    </View>
+                    <Text style={styles.changeFieldText}>Change</Text>
+                  </View>
+                ) : (
+                  <View style={styles.fieldSelectorPlaceholder}>
+                    <Text style={styles.fieldPlaceholderText}>Tap to select a field...</Text>
+                    <Ionicons name="chevron-down" size={20} color={COLORS.textMuted} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+            {errors.fieldId && <Text style={styles.errorText}>{errors.fieldId}</Text>}
+          </View>
+
+          {/* SECTION 3: PLANTING */}
+          <Text style={styles.sectionHeader}>PLANTING</Text>
+          <View style={styles.sectionCard}>
+            <AppInput
+              label="Sowing Date"
+              placeholder="YYYY-MM-DD"
+              value={sowingDate}
+              onChangeText={setSowingDate}
+              helper="Format: YYYY-MM-DD"
+            />
+
+            <AppInput
+              label="Expected Harvest Date"
+              placeholder="YYYY-MM-DD"
+              value={expectedHarvestDate}
+              onChangeText={setExpectedHarvestDate}
+            />
+
+            <AppInput
+              label="Notes"
+              placeholder="Seed lot number, soil conditions, planting depth..."
+              value={notes}
+              onChangeText={setNotes}
+              multiline={true}
+              numberOfLines={3}
+            />
+          </View>
+
+          {/* ACTION BUTTONS */}
+          <View style={styles.buttonRow}>
+            <View style={styles.buttonCol}>
+              <AppButton
+                title="Cancel"
+                variant="secondary"
+                onPress={() => router.back()}
+              />
+            </View>
+            <View style={styles.buttonGap} />
+            <View style={styles.buttonCol}>
+              <AppButton
+                title={submitting ? "Adding..." : "Add Crop"}
+                variant="primary"
+                onPress={handleCreateCrop}
+                loading={submitting}
+                disabled={submitting}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Field Selector Modal */}
+      <Modal
+        visible={isFieldModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setFieldModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Field</Text>
+              <TouchableOpacity onPress={() => setFieldModalVisible(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalSearchBox}>
+              <Ionicons name="search" size={18} color={COLORS.textMuted} style={styles.modalSearchIcon} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search fields..."
+                placeholderTextColor={COLORS.textMuted}
+                value={fieldSearch}
+                onChangeText={setFieldSearch}
+              />
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalList} keyboardShouldPersistTaps="handled">
+              {filteredFields.length === 0 ? (
+                <Text style={styles.modalNoResults}>No fields found.</Text>
+              ) : (
+                filteredFields.map((f) => {
+                  const isSel = String(f.id) === String(fieldId);
+                  return (
+                    <TouchableOpacity
+                      key={f.id}
+                      style={[styles.modalFieldOption, isSel && styles.modalFieldOptionSelected]}
+                      onPress={() => {
+                        setFieldId(String(f.id));
+                        setFieldModalVisible(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.modalFieldLeft}>
+                        <Ionicons
+                          name={isSel ? "radio-button-on" : "radio-button-off"}
+                          size={20}
+                          color={isSel ? COLORS.primary : COLORS.borderDark}
+                        />
+                        <View style={styles.modalFieldInfo}>
+                          <Text style={[styles.modalFieldName, isSel && styles.modalFieldNameSelected]}>
+                            {f.field_name}
+                          </Text>
+                          <Text style={styles.modalFieldMeta}>
+                            {f.location || "Plot"} • {f.area ? `${f.area} ${f.area_unit || "acres"}` : "No Area"}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-
-  loadingContainer: {
+  centerLoading: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+    ...TYPOGRAPHY.supporting,
+    marginTop: SPACING.md,
   },
-
-  title: {
-    fontSize: 30,
-    fontWeight: "bold",
+  keyboardContainer: {
+    flex: 1,
+  },
+  scrollContainer: {
+    paddingHorizontal: SPACING.lg, // 20px
+    paddingTop: SPACING.base,
+    paddingBottom: 40,
+    width: "100%",
+    maxWidth: 860,
+    alignSelf: "center",
+  },
+  apiErrorContainer: {
+    backgroundColor: COLORS.dangerBg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.md,
+  },
+  apiErrorText: {
+    color: COLORS.danger,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  sectionHeader: {
+    ...TYPOGRAPHY.caption,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  sectionCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.base,
+    marginBottom: SPACING.lg,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+      },
+    }),
+  },
+  chipGroupLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text,
     marginBottom: 8,
   },
-
-  subtitle: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 30,
+  requiredAsterisk: {
+    color: COLORS.danger,
   },
-
-  label: {
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: SPACING.md,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  chipActive: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primary,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: COLORS.textSecondary,
+  },
+  chipTextActive: {
+    color: COLORS.primary,
+    fontWeight: "700",
+  },
+  fieldSelectorBox: {
+    backgroundColor: COLORS.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    minHeight: 50,
+    justifyContent: "center",
+  },
+  fieldSelectorPlaceholder: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  fieldPlaceholderText: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+  },
+  fieldSelectorContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  fieldSelectorInfo: {
+    flex: 1,
+  },
+  selectedFieldName: {
     fontSize: 15,
     fontWeight: "600",
+    color: COLORS.text,
+  },
+  selectedFieldMeta: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  changeFieldText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.primary,
+    marginLeft: 10,
+  },
+  noFieldsBox: {
+    padding: SPACING.md,
+    backgroundColor: COLORS.surfaceSubtle,
+    borderRadius: RADIUS.sm,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  noFieldsText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  noFieldsSub: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: "center",
     marginBottom: 8,
   },
-
-  input: {
+  addFieldLink: {
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 18,
+    borderColor: COLORS.borderDark,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: RADIUS.sm,
   },
-
-  notesInput: {
-    minHeight: 100,
-    textAlignVertical: "top",
-  },
-
-  fieldOption: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 10,
-  },
-
-  selectedField: {
-    borderWidth: 2,
-    borderColor: "#2e7d32",
-  },
-
-  fieldText: {
-    fontSize: 16,
+  addFieldLinkText: {
+    fontSize: 13,
     fontWeight: "600",
+    color: COLORS.text,
   },
-
-  selectedFieldText: {
-    color: "#2e7d32",
-  },
-
-  locationText: {
+  errorText: {
+    ...TYPOGRAPHY.supporting,
+    color: COLORS.danger,
     marginTop: 4,
-    color: "#777",
   },
-
-  emptyBox: {
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    marginBottom: 20,
+  buttonRow: {
+    flexDirection: "row",
+    marginTop: SPACING.base,
   },
-
-  secondaryButton: {
-    marginTop: 15,
-    padding: 12,
-    borderRadius: 8,
+  buttonCol: {
+    flex: 1,
+  },
+  buttonGap: {
+    width: SPACING.md,
+  },
+  // Modal Styles
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalContainer: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.lg,
+    borderTopRightRadius: RADIUS.lg,
+    maxHeight: "80%",
+    paddingBottom: Platform.OS === "ios" ? 20 : 0,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalSearchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.surfaceSubtle,
+    margin: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    height: 44,
     borderWidth: 1,
-    borderColor: "#2e7d32",
+    borderColor: COLORS.border,
+  },
+  modalSearchIcon: {
+    marginRight: 8,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+    height: "100%",
+    borderWidth: 0,
+    ...Platform.select({
+      web: {
+        outlineStyle: "none",
+        outlineWidth: 0,
+        boxShadow: "none",
+      },
+    }),
+  },
+  modalList: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.xl * 2,
+  },
+  modalNoResults: {
+    textAlign: "center",
+    fontSize: 14,
+    color: COLORS.textMuted,
+    marginTop: SPACING.lg,
+  },
+  modalFieldOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  modalFieldOptionSelected: {
+    backgroundColor: COLORS.primaryLight,
+    borderBottomColor: COLORS.primaryLight,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 8,
+    marginHorizontal: -8,
+  },
+  modalFieldLeft: {
+    flexDirection: "row",
     alignItems: "center",
   },
-
-  secondaryButtonText: {
-    color: "#2e7d32",
-    fontWeight: "bold",
+  modalFieldInfo: {
+    marginLeft: 12,
   },
-
-  button: {
-    backgroundColor: "#2e7d32",
-    padding: 16,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 10,
+  modalFieldName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: COLORS.text,
   },
-
-  buttonDisabled: {
-    opacity: 0.7,
+  modalFieldNameSelected: {
+    color: COLORS.primary,
   },
-
-  buttonText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "bold",
+  modalFieldMeta: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
 });

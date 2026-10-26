@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-
 import {
   View,
   Text,
@@ -9,14 +8,17 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Platform,
+  StatusBar,
 } from "react-native";
-
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useLocalSearchParams,
   router,
 } from "expo-router";
-
 import API from "../../../../services/api";
+import FarmerHeader from "../../../../components/ui/FarmerHeader";
+import { COLORS } from "../../../../constants/theme";
 
 const STAGES = [
   {
@@ -243,37 +245,33 @@ export default function Lifecycle() {
 
   if (loading) {
     return (
-      <View
-        style={
-          styles.loadingContainer
-        }
-      >
-        <ActivityIndicator
-          size="large"
-        />
-
-        <Text style={styles.loadingText}>
-          Loading lifecycle...
-        </Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.surface }}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>
+            Loading lifecycle...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   // SCREEN
 
   return (
-    <ScrollView
-      contentContainerStyle={
-        styles.container
-      }
-    >
-      <Text style={styles.title}>
-        Crop Lifecycle
-      </Text>
-
-      <Text style={styles.cropText}>
-        Crop ID: {id}
-      </Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.surface }}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+      <FarmerHeader
+        title="Crop Lifecycle"
+        subtitle={`Crop ID: ${id}`}
+        showBack={true}
+      />
+      <ScrollView
+        contentContainerStyle={
+          styles.container
+        }
+      >
 
       {/* LIFECYCLE RECORDS */}
 
@@ -592,6 +590,7 @@ export default function Lifecycle() {
         )}
       </TouchableOpacity>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -601,6 +600,9 @@ const styles = StyleSheet.create({
   container: {
     padding: 24,
     paddingBottom: 50,
+    width: "100%",
+    maxWidth: 860,
+    alignSelf: "center",
   },
 
   loadingContainer: {
@@ -769,12 +771,20 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.2,
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
     padding: 14,
     fontSize: 16,
     marginBottom: 18,
+    ...Platform.select({
+      web: {
+        outlineStyle: "none",
+        outlineWidth: 0,
+        boxShadow: "none",
+      },
+    }),
   },
 
   notesInput: {

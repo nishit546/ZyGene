@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-
 import {
   View,
   Text,
@@ -8,11 +7,13 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
+  StatusBar,
 } from "react-native";
-
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
-
 import API from "../../../services/api";
+import FarmerHeader from "../../../components/ui/FarmerHeader";
+import { COLORS } from "../../../constants/theme";
 
 export default function CropDetails() {
   const { id } = useLocalSearchParams();
@@ -54,39 +55,43 @@ export default function CropDetails() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
-
-        <Text style={styles.loadingText}>
-          Loading crop...
-        </Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.surface }}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>
+            Loading crop...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!crop) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.notFoundText}>
-          Crop not found.
-        </Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.surface }}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+        <FarmerHeader title="Crop Details" showBack={true} />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.notFoundText}>
+            Crop not found.
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-    >
-      {/* Crop Header */}
-
-      <Text style={styles.title}>
-        {crop.crop_name}
-      </Text>
-
-      <Text style={styles.variety}>
-        Variety: {crop.variety || "Not specified"}
-      </Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.surface }}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
+      <FarmerHeader
+        title={crop.crop_name}
+        subtitle={`Variety: ${crop.variety || "Not specified"}`}
+        showBack={true}
+      />
+      <ScrollView
+        contentContainerStyle={styles.container}
+      >
 
       {/* Field */}
 
@@ -169,7 +174,34 @@ export default function CropDetails() {
           View Crop Lifecycle
         </Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.historyButton}
+        onPress={() =>
+          router.push(
+            `/farmer/crop-details/${id}/history`
+          )
+        }
+      >
+        <Text style={styles.historyButtonText}>
+          View Full History
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.quickAddButton}
+        onPress={() =>
+          router.push(
+            `/farmer/field-work?cropId=${id}`
+          )
+        }
+      >
+        <Text style={styles.quickAddButtonText}>
+          + Add Record
+        </Text>
+      </TouchableOpacity>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -248,6 +280,38 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: "#fff",
+    fontSize: 17,
+    fontWeight: "bold",
+  },
+  
+  quickAddButton: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#2e7d32",
+    padding: 16,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  
+  quickAddButtonText: {
+    color: "#2e7d32",
+    fontSize: 17,
+    fontWeight: "bold",
+  },
+
+  historyButton: {
+    backgroundColor: "#e8f5e9", // subtle green
+    borderWidth: 1,
+    borderColor: "#a5d6a7",
+    padding: 16,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  historyButtonText: {
+    color: "#1b5e20",
     fontSize: 17,
     fontWeight: "bold",
   },
