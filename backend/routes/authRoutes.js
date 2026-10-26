@@ -1,8 +1,13 @@
 const express = require("express");
-
 const router = express.Router();
+const { register, login, getMe } = require("../controllers/authController");
+const authenticateUser = require("../middleware/authMiddleware");
 
-const {register,login} = require("../controllers/authController");
-router.post("/register",register);
-router.post("/login",login);
+// Public endpoints
+router.post("/register", register);
+router.post("/login", login);
+
+// Authenticated session check
+router.get("/me", authenticateUser, getMe);
+
 module.exports = router;
