@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Platform,
 } from "react-native";
 
 import {
@@ -621,13 +622,21 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.2,
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
     padding: 14,
     fontSize: 16,
     minHeight: 70,
     textAlignVertical: "top",
+    ...Platform.select({
+      web: {
+        outlineStyle: "none",
+        outlineWidth: 0,
+        boxShadow: "none",
+      },
+    }),
   },
 
   button: {
