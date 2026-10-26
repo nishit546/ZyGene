@@ -189,16 +189,12 @@ erDiagram
 
 ### 2. Database Initialization
 
-1. Open **pgAdmin 4** (or `psql`) connected to your PostgreSQL server.
+1. Connect to your PostgreSQL server using your preferred client (`psql`, pgAdmin, or DBeaver).
 2. Create a database named `zygene`:
    ```sql
    CREATE DATABASE zygene;
    ```
-3. Open `backend/zygene_pgadmin_setup.sql` in the Query Tool (or run via command line):
-   ```bash
-   psql -U postgres -d zygene -f backend/zygene_pgadmin_setup.sql
-   ```
-4. All 15 relational tables, cascade constraints, performance indexes, and seed datasets will be created automatically.
+3. Initialize the database schema for the 15 relational platform tables.
 
 ---
 
@@ -292,9 +288,7 @@ Executes ESLint validation across all Expo Router screens and shared UI componen
 ```text
 ZyGene/
 ├── .gitignore                          # Root Git ignore rules
-├── PROJECT_OVERVIEW.md                 # Detailed architectural documentation
 ├── README.md                           # Master project documentation
-├── zygene_pgadmin_setup.sql            # Master PostgreSQL schema & seed migration
 ├── backend/
 │   ├── config/
 │   │   └── db.js                       # PostgreSQL pool + MySQL translation layer

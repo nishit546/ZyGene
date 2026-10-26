@@ -24,3 +24,9 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Private project overview & database dumps
+PROJECT_OVERVIEW.md
+*.sql
+zygene_pgadmin_setup.sql
+backend/zygene_pgadmin_setup.sql
