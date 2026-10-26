@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { COLORS, SPACING } from "../constants/theme";
+import { COLORS } from "../constants/theme";
 
 /**
  * Premium 4-item fixed bottom navigation for ZyGene Farmer.

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Platform } from "react-native";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { COLORS } from "../constants/theme";
 
 // Universal browser style injection for web to completely eradicate browser outline boxes
 if (Platform.OS === "web" && typeof document !== "undefined") {
@@ -54,6 +55,20 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
   }
 }
 
+// Modal presentation options for create / action sheets
+const modalScreenOptions = {
+  presentation: Platform.OS === "ios" ? "modal" : "card",
+  animation: "slide_from_bottom",
+  animationDuration: 280,
+  gestureDirection: "vertical",
+  gestureEnabled: true,
+};
+
+// Sibling bottom tab / workspace navigation options (clean, instant switch without sliding)
+const tabScreenOptions = {
+  animation: "none",
+};
+
 export default function RootLayout() {
   useEffect(() => {
     // Re-verify in useEffect for hot-reload persistence
@@ -80,46 +95,92 @@ export default function RootLayout() {
       }
     }
   }, []);
+
   return (
-    <SafeAreaProvider style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          // Prevent screen transition flickering or white flash by unifying background
+          contentStyle: { backgroundColor: COLORS.background },
+          // Native platform stack transitions: iOS native or Android crisp slide_from_right
+          animation: Platform.OS === "ios" ? "default" : "slide_from_right",
+          animationDuration: 250,
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+          animationTypeForReplace: "push",
+        }}
+      >
         {/* Root & Auth */}
-        <Stack.Screen name="index" />
-      <Stack.Screen name="login" />
-      <Stack.Screen name="register" />
+        <Stack.Screen
+          name="index"
+          options={{
+            animation: "fade",
+            animationDuration: 200,
+          }}
+        />
+        <Stack.Screen
+          name="login"
+          options={{
+            animation: Platform.OS === "ios" ? "default" : "slide_from_right",
+            animationDuration: 250,
+          }}
+        />
+        <Stack.Screen
+          name="register"
+          options={{
+            animation: Platform.OS === "ios" ? "default" : "slide_from_right",
+            animationDuration: 250,
+          }}
+        />
 
-      {/* Farmer Module */}
-      <Stack.Screen name="farmer/dashboard" />
-      <Stack.Screen name="farmer/crops" />
-      <Stack.Screen name="farmer/fields" />
-      <Stack.Screen name="farmer/more" />
-      <Stack.Screen name="farmer/create-field" />
-      <Stack.Screen name="farmer/create-crop" />
-      <Stack.Screen name="farmer/crop-details/[id]" />
-      <Stack.Screen name="farmer/crop-details/[id]/lifecycle" />
-      <Stack.Screen name="farmer/crop-details/[id]/measurements/[recordId]" />
-      <Stack.Screen name="farmer/crop-details/[id]/photos/[recordId]" />
-      <Stack.Screen name="farmer/crop-details/[id]/irrigation/[recordId]" />
-      <Stack.Screen name="farmer/crop-details/[id]/treatments/[recordId]" />
-      <Stack.Screen name="farmer/crop-details/[id]/disease-pest/[recordId]" />
-      <Stack.Screen name="farmer/crop-details/[id]/harvest/[recordId]" />
+        {/* Farmer Main Workspace Tabs */}
+        <Stack.Screen name="farmer/dashboard" options={tabScreenOptions} />
+        <Stack.Screen name="farmer/crops" options={tabScreenOptions} />
+        <Stack.Screen name="farmer/fields" options={tabScreenOptions} />
+        <Stack.Screen name="farmer/more" options={tabScreenOptions} />
 
-      {/* Breeder Module */}
-      <Stack.Screen name="breeder/dashboard" />
-      <Stack.Screen name="breeder/profile" />
-      <Stack.Screen name="breeder/programs" />
-      <Stack.Screen name="breeder/create-program" />
-      <Stack.Screen name="breeder/program-details/[id]" />
-      <Stack.Screen name="breeder/crosses" />
-      <Stack.Screen name="breeder/create-cross" />
-      <Stack.Screen name="breeder/cross/[id]" />
-      <Stack.Screen name="breeder/trials" />
-      <Stack.Screen name="breeder/create-trial" />
-      <Stack.Screen name="breeder/trial/[id]" />
-      <Stack.Screen name="breeder/trial/[id]/observation/create" />
-      <Stack.Screen name="breeder/trial/[id]/observation/[observationId]" />
-      <Stack.Screen name="breeder/analytics" />
-    </Stack>
+        {/* Farmer Modal Creation Sheets */}
+        <Stack.Screen name="farmer/create-field" options={modalScreenOptions} />
+        <Stack.Screen name="farmer/create-crop" options={modalScreenOptions} />
+
+        {/* Farmer Detail & Action Screens */}
+        <Stack.Screen name="farmer/crop-details/[id]" />
+        <Stack.Screen name="farmer/crop-details/[id]/lifecycle" />
+        <Stack.Screen name="farmer/crop-details/[id]/history" />
+        <Stack.Screen name="farmer/crop-details/[id]/measurements/[recordId]" />
+        <Stack.Screen name="farmer/crop-details/[id]/photos/[recordId]" />
+        <Stack.Screen name="farmer/crop-details/[id]/irrigation/[recordId]" />
+        <Stack.Screen name="farmer/crop-details/[id]/treatments/[recordId]" />
+        <Stack.Screen name="farmer/crop-details/[id]/disease-pest/[recordId]" />
+        <Stack.Screen name="farmer/crop-details/[id]/harvest/[recordId]" />
+        <Stack.Screen name="farmer/field-details/[id]" />
+        <Stack.Screen name="farmer/field-work" />
+        <Stack.Screen name="farmer/notifications" />
+        <Stack.Screen name="farmer/settings" />
+        <Stack.Screen name="farmer/about" />
+        <Stack.Screen name="farmer/profile" />
+
+        {/* Breeder Main Workspace Tabs */}
+        <Stack.Screen name="breeder/dashboard" options={tabScreenOptions} />
+        <Stack.Screen name="breeder/programs" options={tabScreenOptions} />
+        <Stack.Screen name="breeder/crosses" options={tabScreenOptions} />
+        <Stack.Screen name="breeder/trials" options={tabScreenOptions} />
+        <Stack.Screen name="breeder/analytics" options={tabScreenOptions} />
+        <Stack.Screen name="breeder/profile" options={tabScreenOptions} />
+
+        {/* Breeder Modal Creation Sheets */}
+        <Stack.Screen name="breeder/create-program" options={modalScreenOptions} />
+        <Stack.Screen name="breeder/create-cross" options={modalScreenOptions} />
+        <Stack.Screen name="breeder/create-trial" options={modalScreenOptions} />
+        <Stack.Screen name="breeder/trial/[id]/observation/create" options={modalScreenOptions} />
+
+        {/* Breeder Detail & Sub-Screens */}
+        <Stack.Screen name="breeder/program-details/[id]" />
+        <Stack.Screen name="breeder/cross/[id]" />
+        <Stack.Screen name="breeder/trial/[id]" />
+        <Stack.Screen name="breeder/trial/[id]/observation/[observationId]" />
+      </Stack>
     </SafeAreaProvider>
   );
 }
