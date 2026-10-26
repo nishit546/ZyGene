@@ -27,7 +27,6 @@
   - [🔬 For Plant Breeders & Researchers](#-for-plant-breeders--researchers)
 - [System Architecture](#-system-architecture)
 - [Database Schema & Data Model](#-database-schema--data-model)
-- [REST API Reference](#-rest-api-reference)
 - [Getting Started](#-getting-started)
   - [1. Prerequisites](#1-prerequisites)
   - [2. Database Initialization](#2-database-initialization)
@@ -173,63 +172,7 @@ erDiagram
 | `breeding_trials` | Multi-location variety trials, season, start/end dates |
 | `trial_observations` | Quantitative phenotyping traits, rating scores, observation dates |
 
----
 
-## 📡 REST API Reference
-
-All protected endpoints require an `Authorization: Bearer <token>` header.
-
-### Authentication & Profile (`/api/auth`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/auth/register` | Register farmer or breeder (auto-creates breeder profile) |
-| `POST` | `/api/auth/login` | Authenticate user credentials and return JWT bearer token |
-| `GET` | `/api/auth/me` | Fetch authenticated user profile and role details |
-
-### Field Management (`/api/fields`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/fields` | List all fields owned by the authenticated user |
-| `POST` | `/api/fields` | Register a new agricultural field |
-| `GET` | `/api/fields/:id` | Get details and crop history for a specific field |
-| `PUT` | `/api/fields/:id` | Update field properties, boundaries, or soil type |
-| `DELETE` | `/api/fields/:id` | Delete field (cascades to associated crops) |
-
-### Crop Management (`/api/crops`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/crops` | List user crops joined with field attributes |
-| `POST` | `/api/crops` | Register a new crop planting linked to a field |
-| `GET` | `/api/crops/:id` | Retrieve comprehensive crop profile and status |
-| `PUT` | `/api/crops/:id` | Update crop status, expected harvest date, notes |
-| `DELETE` | `/api/crops/:id` | Delete crop and associated lifecycle records |
-
-### Lifecycle & Sub-Module Records (`/api/*`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` / `POST` | `/api/lifecycle/:cropId` | List or create chronological stage records for a crop |
-| `GET` / `POST` | `/api/measurements/:recordId` | List or log growth measurements for a stage |
-| `GET` / `POST` | `/api/photos/:recordId` | List or record photo metadata for a stage |
-| `GET` / `POST` | `/api/irrigation/:recordId` | List or log irrigation events for a stage |
-| `GET` / `POST` | `/api/treatments/:recordId` | List or log chemical/fertilizer applications |
-| `GET` / `POST` | `/api/disease-pests/:recordId`| List or log disease/pest scouting observations |
-| `GET` / `POST` | `/api/harvest/:recordId` | List or log harvest yields and quality grading |
-
-### Breeder Intelligence & Analytics (`/api/breeder`)
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` / `PUT` | `/api/breeder/profile` | View or update breeder profile and institute info |
-| `GET` / `POST` | `/api/breeder/programs` | List or create breeding programs |
-| `GET` / `POST` | `/api/breeder/crosses` | List or create pedigree crosses |
-| `GET` / `POST` | `/api/breeder/trials` | List or create multi-location breeding trials |
-| `GET` / `POST` | `/api/breeder/observations` | List or record trial phenotypic observations |
-| `GET` | `/api/breeder/analytics/overview` | Platform-wide research KPI metrics |
-| `GET` | `/api/breeder/analytics/variety-comparison` | Head-to-head varietal trait performance |
-| `GET` | `/api/breeder/analytics/growth-duration` | Stage duration analysis across varieties |
-| `GET` | `/api/breeder/analytics/disease-occurrence`| Disease susceptibility & frequency analysis |
-| `GET` | `/api/breeder/analytics/location-performance` | Environmental & yield responsiveness by site |
-| `GET` | `/api/breeder/analytics/phenotypic-performance` | Longitudinal trait expression by growth stage |
-| `GET` | `/api/breeder/analytics/top-varieties` | Weighted composite score leaderboard |
 
 ---
 
@@ -285,10 +228,10 @@ npm run dev
 # Or start standard production server
 npm start
 ```
-The server will start on `http://localhost:4000`. Test the health check endpoint:
+The server will start and listen on port 4000:
 ```bash
-curl http://localhost:4000/api/health
-# Response: {"message":"ZyGene API is running"}
+Connected to ZyGene Database (PostgreSQL active on port 5432)
+Server running on 4000
 ```
 
 ---
