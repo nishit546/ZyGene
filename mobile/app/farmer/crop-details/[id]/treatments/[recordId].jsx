@@ -9,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Platform,
 } from "react-native";
 
 import { useLocalSearchParams } from "expo-router";
@@ -425,10 +426,7 @@ export default function Treatments() {
       >
         {TREATMENT_TYPES.map(
           (item) => {
-            const selected =
-              treatmentType ===
-              item.value;
-
+            const selected = treatmentType === item.value;
             return (
               <TouchableOpacity
                 key={item.value}
@@ -690,12 +688,20 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.2,
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
     padding: 14,
     fontSize: 16,
     marginBottom: 18,
+    ...Platform.select({
+      web: {
+        outlineStyle: "none",
+        outlineWidth: 0,
+        boxShadow: "none",
+      },
+    }),
   },
 
   notesInput: {

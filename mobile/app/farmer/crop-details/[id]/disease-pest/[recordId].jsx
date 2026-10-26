@@ -9,11 +9,13 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Platform,
 } from "react-native";
 
 import { useLocalSearchParams } from "expo-router";
 
 import API from "../../../../../services/api";
+
 
 const OBSERVATION_TYPES = [
   {
@@ -724,12 +726,20 @@ const styles = StyleSheet.create({
   },
 
   input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.2,
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
     padding: 14,
     fontSize: 16,
     marginBottom: 18,
+    ...Platform.select({
+      web: {
+        outlineStyle: "none",
+        outlineWidth: 0,
+        boxShadow: "none",
+      },
+    }),
   },
 
   notesInput: {
