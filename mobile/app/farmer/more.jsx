@@ -114,6 +114,8 @@ export default function FarmerMoreScreen() {
 
         {/* FARM MANAGEMENT */}
         {renderSection("FARM MANAGEMENT", [
+          { id: "tasks", title: "Farm Tasks", subtitle: "Scheduled activities & to-dos", icon: "checkbox-outline", route: "/farmer/tasks" },
+          { id: "field-work", title: "Field Work", subtitle: "Direct field activity entry", icon: "document-text-outline", route: "/farmer/field-work" },
           { id: "fields", title: "Fields", icon: "map-outline", route: "/farmer/fields" },
           { id: "crops", title: "Crops", icon: "leaf-outline", route: "/farmer/crops" },
         ])}

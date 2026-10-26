@@ -1,3 +1,4 @@
+import "../global.css";
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { Stack } from "expo-router";
@@ -143,8 +144,10 @@ export default function RootLayout() {
         {/* Farmer Modal Creation Sheets */}
         <Stack.Screen name="farmer/create-field" options={modalScreenOptions} />
         <Stack.Screen name="farmer/create-crop" options={modalScreenOptions} />
+        <Stack.Screen name="farmer/create-task" options={modalScreenOptions} />
 
         {/* Farmer Detail & Action Screens */}
+        <Stack.Screen name="farmer/tasks" />
         <Stack.Screen name="farmer/crop-details/[id]" />
         <Stack.Screen name="farmer/crop-details/[id]/lifecycle" />
         <Stack.Screen name="farmer/crop-details/[id]/history" />
