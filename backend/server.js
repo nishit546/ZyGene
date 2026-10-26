@@ -15,6 +15,7 @@ const irrigationRoutes = require("./routes/irrigationRoutes");
 const treatmentRoutes = require("./routes/treatmentRoutes");
 const diseasePestRoutes = require("./routes/diseasePestRoutes");
 const harvestRoutes = require("./routes/harvestRoutes");
+const taskRoutes = require("./routes/taskRoutes");
 
 const breederRoutes = require("./routes/breederRoutes");
 const breederProfileRoutes = require("./routes/breederProfileRoutes");
@@ -61,6 +62,8 @@ app.use("/api/treatments", treatmentRoutes);
 app.use("/api/disease-pests", diseasePestRoutes);
 
 app.use("/api/harvest", harvestRoutes);
+
+app.use("/api/tasks", taskRoutes);
 app.use("/api/breeder/observations",trialObservationRoutes);
 
 // Breeder routes

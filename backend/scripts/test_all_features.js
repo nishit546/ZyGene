@@ -11,6 +11,7 @@ const irrigationRoutes = require("../routes/irrigationRoutes");
 const treatmentRoutes = require("../routes/treatmentRoutes");
 const diseasePestRoutes = require("../routes/diseasePestRoutes");
 const harvestRoutes = require("../routes/harvestRoutes");
+const taskRoutes = require("../routes/taskRoutes");
 
 const breederRoutes = require("../routes/breederRoutes");
 const breederProfileRoutes = require("../routes/breederProfileRoutes");
@@ -36,6 +37,7 @@ app.use("/api/irrigation", irrigationRoutes);
 app.use("/api/treatments", treatmentRoutes);
 app.use("/api/disease-pests", diseasePestRoutes);
 app.use("/api/harvest", harvestRoutes);
+app.use("/api/tasks", taskRoutes);
 app.use("/api/breeder/observations", trialObservationRoutes);
 app.use("/api/breeder", breederRoutes);
 app.use("/api/breeder/programs", breedingProgramRoutes);
@@ -269,6 +271,37 @@ async function runFeatureTests() {
 
     const getHarvestRes = await request("GET", `/api/harvest/${lifecycleId}`, null, farmerToken);
     assert(getHarvestRes.status === 200 && getHarvestRes.data.harvest.length > 0, "Fetch harvest records for stage");
+
+    // Farm Tasks
+    const createTaskRes = await request("POST", "/api/tasks", {
+      title: "Clean Field Sprayers",
+      description: "Rinse pesticide tank and check nozzle spray pattern",
+      category: "treatment",
+      priority: "high",
+      field_id: fieldId,
+      crop_id: cropId,
+      due_date: "2026-10-30",
+    }, farmerToken);
+    assert(createTaskRes.status === 201 && createTaskRes.data.task.id, "Create farm task linked to field & crop");
+    const taskId = createTaskRes.data.task.id;
+
+    const getTasksRes = await request("GET", "/api/tasks", null, farmerToken);
+    assert(getTasksRes.status === 200 && getTasksRes.data.tasks.length > 0, "Fetch all farm tasks with joined metadata");
+
+    const getTaskStatsRes = await request("GET", "/api/tasks/stats", null, farmerToken);
+    assert(getTaskStatsRes.status === 200 && typeof getTaskStatsRes.data.stats.pending === "number", "Fetch farm task statistics");
+
+    const toggleTaskRes = await request("PATCH", `/api/tasks/${taskId}/toggle`, null, farmerToken);
+    assert(toggleTaskRes.status === 200 && toggleTaskRes.data.task.status === "completed", "Toggle task status to completed");
+
+    const updateTaskRes = await request("PUT", `/api/tasks/${taskId}`, {
+      priority: "urgent",
+      description: "Ensure chemical PPE is sanitized and stored properly",
+    }, farmerToken);
+    assert(updateTaskRes.status === 200 && updateTaskRes.data.task.priority === "urgent", "Update task priority and description");
+
+    const deleteTaskRes = await request("DELETE", `/api/tasks/${taskId}`, null, farmerToken);
+    assert(deleteTaskRes.status === 200, "Delete farm task");
 
     // Clean up created crop & field (foreign key cascade tests)
     const deleteCropRes = await request("DELETE", `/api/crops/${cropId}`, null, farmerToken);
