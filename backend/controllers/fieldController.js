@@ -1,43 +1,42 @@
-const db = require("../config/db");
+const { pool } = require("../config/db");
 
-const createField = (req, res) => {
-  const {
-    field_name,
-    latitude,
-    longitude,
-    area,
-    area_unit,
-    soil_type,
-    location_name,
-  } = req.body;
-
-  // Logged-in user's ID comes from JWT middleware
-  const user_id = req.user.id;
-
-  if (!field_name) {
-    return res.status(400).json({
-      message: "Field name is required",
-    });
-  }
-
-  const query = `
-    insert into fields 
-    (
-      user_id,
+const createField = async (req, res) => {
+  try {
+    const {
       field_name,
       latitude,
       longitude,
       area,
       area_unit,
       soil_type,
-      location_name
-    )
-    values (?, ?, ?, ?, ?, ?, ?, ?)
-  `;
+      location_name,
+    } = req.body;
 
-  db.query(
-    query,
-    [
+    const user_id = req.user.id;
+
+    if (!field_name) {
+      return res.status(400).json({
+        message: "Field name is required",
+      });
+    }
+
+    const query = `
+      INSERT INTO fields 
+      (
+        user_id,
+        field_name,
+        latitude,
+        longitude,
+        area,
+        area_unit,
+        soil_type,
+        location_name
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
       user_id,
       field_name,
       latitude || null,
@@ -46,126 +45,110 @@ const createField = (req, res) => {
       area_unit || null,
       soil_type || null,
       location_name || null,
-    ],
-    (error, result) => {
-      if (error) {
-        console.error(error);
+    ]);
 
-        return res.status(500).json({
-          message: "Failed to create field",
-        });
-      }
-
-      res.status(201).json({
-        message: "Field created successfully",
-        field: {
-          id: result.insertId,
-          user_id,
-          field_name,
-          latitude,
-          longitude,
-          area,
-          area_unit,
-          soil_type,
-          location_name,
-        },
-      });
-    }
-  );
-};
-
-const getFields = (req, res) => {
-  const user_id = req.user.id;
-
-  const query = `
-    select * from fields
-    where user_id = ?
-    order by created_at desc
-  `;
-
-  db.query(query, [user_id], (error, results) => {
-    if (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        message: "Failed to fetch fields",
-      });
-    }
-
-    res.status(200).json({
-      message: "Fields fetched successfully",
-      fields: results,
+    return res.status(201).json({
+      message: "Field created successfully",
+      field: result.rows[0],
     });
-  });
+  } catch (error) {
+    console.error("Create field error:", error.message);
+    return res.status(500).json({
+      message: "Failed to create field",
+    });
+  }
 };
 
-const getFieldById = (req, res) => {
-  const user_id = req.user.id;
-  const field_id = req.params.id;
+const getFields = async (req, res) => {
+  try {
+    const user_id = req.user.id;
 
-  const query = `
-    select * from fields
-    where id = ? and user_id = ?
-  `;
+    const query = `
+      SELECT * FROM fields
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `;
 
-  db.query(query, [field_id, user_id], (error, results) => {
-    if (error) {
-      console.error(error);
+    const result = await pool.query(query, [user_id]);
 
-      return res.status(500).json({
-        message: "Failed to fetch field",
-      });
-    }
+    return res.status(200).json({
+      message: "Fields fetched successfully",
+      fields: result.rows,
+    });
+  } catch (error) {
+    console.error("Get fields error:", error.message);
+    return res.status(500).json({
+      message: "Failed to fetch fields",
+    });
+  }
+};
 
-    if (results.length === 0) {
+const getFieldById = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const field_id = req.params.id;
+
+    const query = `
+      SELECT * FROM fields
+      WHERE id = $1 AND user_id = $2
+    `;
+
+    const result = await pool.query(query, [field_id, user_id]);
+
+    if (result.rows.length === 0) {
       return res.status(404).json({
         message: "Field not found",
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Field fetched successfully",
-      field: results[0],
+      field: result.rows[0],
     });
-  });
-};
-
-const updateField = (req, res) => {
-  const user_id = req.user.id;
-  const field_id = req.params.id;
-
-  const {
-    field_name,
-    latitude,
-    longitude,
-    area,
-    area_unit,
-    soil_type,
-    location_name,
-  } = req.body;
-
-  if (!field_name) {
-    return res.status(400).json({
-      message: "Field name is required",
+  } catch (error) {
+    console.error("Get field by id error:", error.message);
+    return res.status(500).json({
+      message: "Failed to fetch field",
     });
   }
+};
 
-  const query = `
-    update fields
-    set
-      field_name = ?,
-      latitude = ?,
-      longitude = ?,
-      area = ?,
-      area_unit = ?,
-      soil_type = ?,
-      location_name = ?
-    where id = ? and user_id = ?
-  `;
+const updateField = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const field_id = req.params.id;
 
-  db.query(
-    query,
-    [
+    const {
+      field_name,
+      latitude,
+      longitude,
+      area,
+      area_unit,
+      soil_type,
+      location_name,
+    } = req.body;
+
+    if (!field_name) {
+      return res.status(400).json({
+        message: "Field name is required",
+      });
+    }
+
+    const query = `
+      UPDATE fields
+      SET
+        field_name = $1,
+        latitude = $2,
+        longitude = $3,
+        area = $4,
+        area_unit = $5,
+        soil_type = $6,
+        location_name = $7
+      WHERE id = $8 AND user_id = $9
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
       field_name,
       latitude || null,
       longitude || null,
@@ -175,62 +158,59 @@ const updateField = (req, res) => {
       location_name || null,
       field_id,
       user_id,
-    ],
-    (error, result) => {
-      if (error) {
-        console.error(error);
+    ]);
 
-        return res.status(500).json({
-          message: "Failed to update field",
-        });
-      }
-
-      if (result.affectedRows === 0) {
-        return res.status(404).json({
-          message: "Field not found or unauthorized",
-        });
-      }
-
-      res.status(200).json({
-        message: "Field updated successfully",
-      });
-    }
-  );
-};
-
-const deleteField = (req, res) => {
-  const user_id = req.user.id;
-  const field_id = req.params.id;
-
-  const query = `
-    delete from fields
-    where id = ? and user_id = ?
-  `;
-
-  db.query(query, [field_id, user_id], (error, result) => {
-    if (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        message: "Failed to delete field",
-      });
-    }
-
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({
         message: "Field not found or unauthorized",
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
+      message: "Field updated successfully",
+      field: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update field error:", error.message);
+    return res.status(500).json({
+      message: "Failed to update field",
+    });
+  }
+};
+
+const deleteField = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const field_id = req.params.id;
+
+    const query = `
+      DELETE FROM fields
+      WHERE id = $1 AND user_id = $2
+    `;
+
+    const result = await pool.query(query, [field_id, user_id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: "Field not found or unauthorized",
+      });
+    }
+
+    return res.status(200).json({
       message: "Field deleted successfully",
     });
-  });
+  } catch (error) {
+    console.error("Delete field error:", error.message);
+    return res.status(500).json({
+      message: "Failed to delete field",
+    });
+  }
 };
+
 module.exports = {
   createField,
-  getFields
-  ,getFieldById,
+  getFields,
+  getFieldById,
   updateField,
-  deleteField
+  deleteField,
 };

@@ -1,324 +1,361 @@
-import { useState } from "react";
-
+import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ActivityIndicator,
   ScrollView,
+  StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-
 import { router } from "expo-router";
-
 import API from "../../services/api";
+import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from "../../constants/theme";
+import FarmerHeader from "../../components/ui/FarmerHeader";
+import AppInput from "../../components/ui/AppInput";
+import AppButton from "../../components/ui/AppButton";
+
+const COMMON_UNITS = ["acres", "hectares", "bigha", "sq m"];
+const SOIL_TYPES = ["Loamy", "Clay", "Black Cotton", "Alluvial", "Sandy", "Red Soil"];
 
 export default function CreateField() {
   const [fieldName, setFieldName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [area, setArea] = useState("");
-  const [areaUnit, setAreaUnit] = useState("");
+  const [areaUnit, setAreaUnit] = useState("acres");
+  const [soilType, setSoilType] = useState("Loamy");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [notes, setNotes] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState("");
 
   const handleCreateField = async () => {
-    console.log("CREATE FIELD CLICKED");
+    setErrors({});
+    setApiError("");
+    
+    let newErrors = {};
 
     if (!fieldName.trim()) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter a field name."
-      );
+      newErrors.fieldName = "Field name is required.";
+    }
+
+    if (area.trim() && isNaN(Number(area.trim()))) {
+      newErrors.area = "Area must be a valid number.";
+    }
+
+    if (latitude.trim() && isNaN(Number(latitude.trim()))) {
+      newErrors.latitude = "Latitude must be a valid number.";
+    }
+
+    if (longitude.trim() && isNaN(Number(longitude.trim()))) {
+      newErrors.longitude = "Longitude must be a valid number.";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
+
+    if (loading) return;
 
     try {
       setLoading(true);
 
+      const combinedNotes = [
+        soilType ? `Soil: ${soilType}` : null,
+        notes.trim() || null,
+      ]
+        .filter(Boolean)
+        .join(". ");
+
       const payload = {
         field_name: fieldName.trim(),
-
-        location_name:
-          locationName.trim() || null,
-
-        area: area.trim()
-          ? Number(area)
-          : null,
-
-        area_unit:
-          areaUnit.trim() || null,
-
-        latitude: latitude.trim()
-          ? Number(latitude)
-          : null,
-
-        longitude: longitude.trim()
-          ? Number(longitude)
-          : null,
-
-        notes: notes.trim() || null,
+        location_name: locationName.trim() || null,
+        area: area.trim() ? Number(area.trim()) : null,
+        area_unit: areaUnit.trim() || null,
+        latitude: latitude.trim() ? Number(latitude.trim()) : null,
+        longitude: longitude.trim() ? Number(longitude.trim()) : null,
+        notes: combinedNotes || null,
       };
 
-      console.log(
-        "FIELD PAYLOAD:",
-        payload
-      );
+      await API.post("/fields", payload);
 
-      const response = await API.post(
-        "/fields",
-        payload
-      );
-
-      console.log(
-        "FIELD CREATED:",
-        response.data
-      );
-
-      // ====================================
-      // REDIRECT AFTER SUCCESS
-      // ====================================
-
-      router.replace("/farmer/create-crop");
-
+      setApiError("✓ Field plot successfully added.");
+      setTimeout(() => {
+        router.replace("/farmer/fields");
+      }, 800);
     } catch (error) {
-      console.log(
-        "CREATE FIELD ERROR:",
-        error.response?.data ||
-          error.message
-      );
-
-      Alert.alert(
-        "Error",
-        error.response?.data?.message ||
-          "Failed to create field."
-      );
+      console.log("CREATE FIELD ERROR:", error.response?.data || error.message);
+      setApiError("Unable to create field. Please check your information and try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={
-        styles.container
-      }
-    >
-      <Text style={styles.title}>
-        Create Field
-      </Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
 
-      <Text style={styles.subtitle}>
-        Add a new field to your farm
-      </Text>
-
-      {/* FIELD NAME */}
-
-      <Text style={styles.label}>
-        Field Name *
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. North Field"
-        value={fieldName}
-        onChangeText={setFieldName}
+      {/* Header */}
+      <FarmerHeader
+        title="Create Field"
+        subtitle="Add a farm area to start tracking crops."
+        showBack={true}
       />
 
-      {/* LOCATION */}
-
-      <Text style={styles.label}>
-        Location
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. Ahmedabad"
-        value={locationName}
-        onChangeText={setLocationName}
-      />
-
-      {/* AREA */}
-
-      <Text style={styles.label}>
-        Area
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. 5"
-        value={area}
-        onChangeText={setArea}
-        keyboardType="decimal-pad"
-      />
-
-      {/* AREA UNIT */}
-
-      <Text style={styles.label}>
-        Area Unit
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. acre"
-        value={areaUnit}
-        onChangeText={setAreaUnit}
-      />
-
-      {/* LATITUDE */}
-
-      <Text style={styles.label}>
-        Latitude
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. 23.0225"
-        value={latitude}
-        onChangeText={setLatitude}
-        keyboardType="decimal-pad"
-      />
-
-      {/* LONGITUDE */}
-
-      <Text style={styles.label}>
-        Longitude
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. 72.5714"
-        value={longitude}
-        onChangeText={setLongitude}
-        keyboardType="decimal-pad"
-      />
-
-      {/* NOTES */}
-
-      <Text style={styles.label}>
-        Notes
-      </Text>
-
-      <TextInput
-        style={[
-          styles.input,
-          styles.notesInput,
-        ]}
-        placeholder="Additional information..."
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={4}
-      />
-
-      {/* CREATE FIELD */}
-
-      <TouchableOpacity
-        style={[
-          styles.button,
-          loading &&
-            styles.buttonDisabled,
-        ]}
-        onPress={handleCreateField}
-        disabled={loading}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboardContainer}
       >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>
-            Create Field
-          </Text>
-        )}
-      </TouchableOpacity>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {apiError ? (
+            <View style={[styles.apiErrorContainer, { backgroundColor: apiError.startsWith("✓") ? COLORS.primaryLight : COLORS.dangerBg }]}>
+              <Text style={[styles.apiErrorText, { color: apiError.startsWith("✓") ? COLORS.primaryDark : COLORS.danger }]}>{apiError}</Text>
+            </View>
+          ) : null}
 
-      {/* CANCEL */}
+          {/* SECTION: FIELD INFORMATION */}
+          <Text style={styles.sectionHeader}>FIELD INFORMATION</Text>
+          <View style={styles.sectionCard}>
+            <AppInput
+              label="Field Name"
+              placeholder="e.g. North Plot A"
+              value={fieldName}
+              onChangeText={setFieldName}
+              isRequired={true}
+              error={errors.fieldName}
+            />
 
-      <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() =>
-          router.replace(
-            "/farmer/create-crop"
-          )
-        }
-        disabled={loading}
-      >
-        <Text style={styles.cancelText}>
-          Cancel
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+            <AppInput
+              label="Location"
+              placeholder="e.g. Sector 4, North Farm"
+              value={locationName}
+              onChangeText={setLocationName}
+            />
+          </View>
+
+          {/* SECTION: AREA */}
+          <Text style={styles.sectionHeader}>AREA</Text>
+          <View style={styles.sectionCard}>
+            <AppInput
+              label="Area"
+              placeholder="e.g. 5.5"
+              value={area}
+              onChangeText={setArea}
+              keyboardType="decimal-pad"
+              error={errors.area}
+            />
+
+            <Text style={styles.chipGroupLabel}>Area Unit</Text>
+            <View style={styles.chipRow}>
+              {COMMON_UNITS.map((unit) => {
+                const isSelected = areaUnit === unit;
+                return (
+                  <TouchableOpacity
+                    key={unit}
+                    style={[styles.chip, isSelected && styles.chipActive]}
+                    onPress={() => setAreaUnit(unit)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                      {unit}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* SECTION: SOIL */}
+          <Text style={styles.sectionHeader}>SOIL</Text>
+          <View style={styles.sectionCard}>
+            <Text style={styles.chipGroupLabel}>Soil Type</Text>
+            <View style={styles.chipRow}>
+              {SOIL_TYPES.map((type) => {
+                const isSelected = soilType === type;
+                return (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.chip, isSelected && styles.chipActive]}
+                    onPress={() => setSoilType(type)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* SECTION: OPTIONAL COORDINATES & NOTES */}
+          <Text style={styles.sectionHeader}>COORDINATES & NOTES</Text>
+          <View style={styles.sectionCard}>
+            <View style={styles.coordsRow}>
+              <View style={styles.coordCol}>
+                <AppInput
+                  label="Latitude"
+                  placeholder="23.0225"
+                  value={latitude}
+                  onChangeText={setLatitude}
+                  keyboardType="numeric"
+                  error={errors.latitude}
+                />
+              </View>
+              <View style={styles.coordGap} />
+              <View style={styles.coordCol}>
+                <AppInput
+                  label="Longitude"
+                  placeholder="72.5714"
+                  value={longitude}
+                  onChangeText={setLongitude}
+                  keyboardType="numeric"
+                  error={errors.longitude}
+                />
+              </View>
+            </View>
+
+            <AppInput
+              label="Notes"
+              placeholder="Irrigation access, slope, or soil amendments..."
+              value={notes}
+              onChangeText={setNotes}
+              multiline={true}
+              numberOfLines={3}
+            />
+          </View>
+
+          {/* ACTION BUTTONS: Cancel + Add Field */}
+          <View style={styles.buttonRow}>
+            <View style={styles.buttonCol}>
+              <AppButton
+                title="Cancel"
+                variant="secondary"
+                onPress={() => router.back()}
+              />
+            </View>
+            <View style={styles.buttonGap} />
+            <View style={styles.buttonCol}>
+              <AppButton
+                title={loading ? "Adding..." : "Add Field"}
+                variant="primary"
+                onPress={handleCreateField}
+                loading={loading}
+                disabled={loading}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 24,
-    paddingTop: 40,
-    paddingBottom: 50,
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
   },
-
-  title: {
-    fontSize: 30,
-    fontWeight: "bold",
-    marginBottom: 8,
+  keyboardContainer: {
+    flex: 1,
   },
-
-  subtitle: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 30,
+  scrollContainer: {
+    paddingHorizontal: SPACING.lg, // 20px
+    paddingTop: SPACING.base,
+    paddingBottom: 40,
+    width: "100%",
+    maxWidth: 860,
+    alignSelf: "center",
   },
-
-  label: {
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 8,
+  apiErrorContainer: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.md,
   },
-
-  input: {
+  apiErrorText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  sectionHeader: {
+    ...TYPOGRAPHY.caption,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  sectionCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 18,
+    borderColor: COLORS.border,
+    padding: SPACING.base,
+    marginBottom: SPACING.lg,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+      },
+    }),
   },
-
-  notesInput: {
-    minHeight: 100,
-    textAlignVertical: "top",
+  chipGroupLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginBottom: 8,
   },
-
-  button: {
-    backgroundColor: "#2e7d32",
-    padding: 16,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 10,
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: SPACING.sm,
   },
-
-  buttonDisabled: {
-    opacity: 0.7,
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginRight: 8,
+    marginBottom: 8,
   },
-
-  buttonText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "bold",
+  chipActive: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primary,
   },
-
-  cancelButton: {
-    padding: 16,
-    alignItems: "center",
-    marginTop: 10,
+  chipText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: COLORS.textSecondary,
   },
-
-  cancelText: {
-    color: "#666",
-    fontSize: 16,
+  chipTextActive: {
+    color: COLORS.primary,
+    fontWeight: "700",
+  },
+  coordsRow: {
+    flexDirection: "row",
+  },
+  coordCol: {
+    flex: 1,
+  },
+  coordGap: {
+    width: SPACING.md,
+  },
+  buttonRow: {
+    flexDirection: "row",
+    marginTop: SPACING.base,
+  },
+  buttonCol: {
+    flex: 1,
+  },
+  buttonGap: {
+    width: SPACING.md,
   },
 });
