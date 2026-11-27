@@ -1,11 +1,34 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Platform } from "react-native";
 import { router } from "expo-router";
+import { checkUnsyncedRecordsOnLogout } from "./syncService";
+
+/**
+ * Returns current user object from AsyncStorage.
+ */
+export const getCurrentUser = async () => {
+  try {
+    const userStr = await AsyncStorage.getItem("user");
+    return userStr ? JSON.parse(userStr) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Returns current logged in user ID.
+ */
+export const getCurrentUserId = async () => {
+  const user = await getCurrentUser();
+  return user?.id || null;
+};
 
 /**
  * Clears JWT token and user info from AsyncStorage,
  * then navigates to /login using router.replace so the back button
  * cannot return to authenticated screens.
+ * Note: Local SQLite cached records are preserved so offline records
+ * are never silently wiped out.
  */
 export const logout = async () => {
   try {
@@ -18,27 +41,41 @@ export const logout = async () => {
 };
 
 /**
- * Prompts the user with a standardized confirmation dialog before logout.
+ * Prompts the user with a confirmation dialog before logout.
+ * Warns if unsynchronized offline records exist.
  */
-export const confirmLogout = (customMessage) => {
+export const confirmLogout = async (customMessage) => {
+  const userId = await getCurrentUserId();
+  let hasUnsynced = false;
+  try {
+    hasUnsynced = await checkUnsyncedRecordsOnLogout(userId);
+  } catch (e) {
+    console.warn("Could not check unsynced records before logout:", e);
+  }
+
+  const baseMsg = customMessage || "Are you sure you want to log out?";
+  const warningMsg = hasUnsynced
+    ? `${baseMsg}\n\n⚠️ WARNING: You have unsynchronized records waiting on this device. Logging out now will keep them stored safely on this device, but they will not reach the server until you log back in and synchronize.`
+    : baseMsg;
+
   if (Platform.OS === "web") {
     if (typeof window !== "undefined" && window.confirm) {
-      if (window.confirm(customMessage || "Are you sure you want to logout?")) {
-        logout();
+      if (window.confirm(warningMsg)) {
+        await logout();
       }
     } else {
-      logout();
+      await logout();
     }
     return;
   }
 
   Alert.alert(
-    "Logout",
-    customMessage || "Are you sure you want to logout?",
+    "Log Out",
+    warningMsg,
     [
       { text: "Cancel", style: "cancel" },
       {
-        text: "Logout",
+        text: "Log Out",
         style: "destructive",
         onPress: logout,
       },

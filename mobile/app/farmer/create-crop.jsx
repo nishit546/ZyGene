@@ -20,7 +20,13 @@ import API from "../../services/api";
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from "../../constants/theme";
 import FarmerHeader from "../../components/ui/FarmerHeader";
 import AppInput from "../../components/ui/AppInput";
+import AppDatePicker from "../../components/ui/AppDatePicker";
 import AppButton from "../../components/ui/AppButton";
+import SyncStatus from "../../components/SyncStatus";
+import useNetworkStatus from "../../hooks/useNetworkStatus";
+import { enqueueOperation } from "../../services/syncService";
+import { generateLocalId, cacheFields, cacheCrops, getCachedFields } from "../../services/offlineStorage";
+import { getCurrentUserId } from "../../services/auth";
 
 const POPULAR_CROPS = ["Wheat", "Rice", "Cotton", "Maize", "Soybean", "Mustard"];
 
@@ -39,6 +45,9 @@ export default function CreateCrop() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState("");
+  const [userId, setUserId] = useState(null);
+
+  const { isOnline } = useNetworkStatus();
 
   // Modal State for Field Selector
   const [isFieldModalVisible, setFieldModalVisible] = useState(false);
@@ -47,15 +56,34 @@ export default function CreateCrop() {
   const loadFields = async () => {
     try {
       setLoadingFields(true);
-      const response = await API.get("/fields");
-      const fetchedFields = response.data?.fields || [];
-      setFields(fetchedFields);
-      if (fetchedFields.length === 1) {
-        setFieldId(String(fetchedFields[0].id));
+      const uid = await getCurrentUserId();
+      setUserId(uid);
+
+      if (isOnline) {
+        try {
+          const response = await API.get("/fields");
+          const fetchedFields = response.data?.fields || [];
+          setFields(fetchedFields);
+          await cacheFields(uid, fetchedFields);
+          if (fetchedFields.length === 1) {
+            setFieldId(String(fetchedFields[0].id));
+          }
+          return;
+        } catch (apiErr) {
+          console.log("[create-crop] Failed to load fields online, loading cache:", apiErr.message);
+        }
+      }
+
+      // Offline or fallback: load from SQLite
+      const cached = await getCachedFields(uid);
+      setFields(cached);
+      if (cached.length === 1) {
+        setFieldId(String(cached[0].id || cached[0].local_id));
       }
     } catch (error) {
-      console.log("LOAD FIELDS ERROR:", error.response?.data || error.message);
-      setApiError("Failed to load fields. Please try again.");
+      console.log("LOAD FIELDS ERROR:", error.message);
+      const cached = await getCachedFields(userId);
+      setFields(cached);
     } finally {
       setLoadingFields(false);
     }
@@ -87,9 +115,10 @@ export default function CreateCrop() {
 
     try {
       setSubmitting(true);
+      const uid = userId || (await getCurrentUserId());
 
       const payload = {
-        field_id: Number(fieldId),
+        field_id: Number(fieldId) || fieldId,
         crop_name: cropName.trim(),
         variety: variety.trim() || null,
         sowing_date: sowingDate.trim() || null,
@@ -97,13 +126,67 @@ export default function CreateCrop() {
         notes: notes.trim() || null,
       };
 
-      const res = await API.post("/crops", payload);
-      const createdId = res.data?.crop?.id || res.data?.id || res.data?.crop_id;
+      // If offline or field was created offline: save locally and queue
+      if (!isOnline || String(fieldId).startsWith("loc_")) {
+        const localId = generateLocalId("crp");
+        await enqueueOperation({
+          userId: uid,
+          recordType: "crop",
+          operationType: "create",
+          localRecordId: localId,
+          parentLocalId: String(fieldId).startsWith("loc_") ? String(fieldId) : null,
+          parentServerId: !String(fieldId).startsWith("loc_") ? Number(fieldId) : null,
+          endpoint: "/crops",
+          httpMethod: "POST",
+          payload,
+        });
 
-      router.replace(createdId ? `/farmer/crop-details/${createdId}` : "/farmer/crops");
+        Alert.alert(
+          "Saved on this device",
+          "Crop saved locally. It will sync automatically when you are back online."
+        );
+
+        router.replace("/farmer/crops");
+        return;
+      }
+
+      // Online: send request
+      try {
+        const res = await API.post("/crops", payload);
+        const createdCrop = res.data?.crop;
+        if (createdCrop) {
+          await cacheCrops(uid, [createdCrop]);
+        }
+        const createdId = createdCrop?.id || res.data?.id || res.data?.crop_id;
+        router.replace(createdId ? `/farmer/crop-details/${createdId}` : "/farmer/crops");
+      } catch (reqErr) {
+        if (!reqErr.response) {
+          const localId = generateLocalId("crp");
+          await enqueueOperation({
+            userId: uid,
+            recordType: "crop",
+            operationType: "create",
+            localRecordId: localId,
+            parentLocalId: String(fieldId).startsWith("loc_") ? String(fieldId) : null,
+            parentServerId: !String(fieldId).startsWith("loc_") ? Number(fieldId) : null,
+            endpoint: "/crops",
+            httpMethod: "POST",
+            payload,
+          });
+
+          Alert.alert(
+            "Saved on this device",
+            "Connection interrupted. Saved locally and queued for automatic sync."
+          );
+
+          router.replace("/farmer/crops");
+        } else {
+          setApiError(reqErr.response?.data?.message || "Unable to create crop. Please try again.");
+        }
+      }
     } catch (error) {
-      console.log("CREATE CROP ERROR:", error.response?.data || error.message);
-      setApiError(error.response?.data?.message || "Unable to create crop. Please try again.");
+      console.log("CREATE CROP ERROR:", error.message);
+      setApiError("Unable to create crop. Please check your information and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -145,6 +228,9 @@ export default function CreateCrop() {
         subtitle="Add a crop and start tracking its lifecycle."
         showBack={true}
       />
+
+      {/* Offline Status Banner */}
+      <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -249,19 +335,22 @@ export default function CreateCrop() {
           {/* SECTION 3: PLANTING */}
           <Text style={styles.sectionHeader}>PLANTING</Text>
           <View style={styles.sectionCard}>
-            <AppInput
+            <AppDatePicker
               label="Sowing Date"
-              placeholder="YYYY-MM-DD"
+              placeholder="Select sowing date"
               value={sowingDate}
-              onChangeText={setSowingDate}
-              helper="Format: YYYY-MM-DD"
+              onChange={setSowingDate}
+              helper="Recorded sowing / seed planting date"
+              maxDate={new Date()}
             />
 
-            <AppInput
+            <AppDatePicker
               label="Expected Harvest Date"
-              placeholder="YYYY-MM-DD"
+              placeholder="Select target harvest date"
               value={expectedHarvestDate}
-              onChangeText={setExpectedHarvestDate}
+              onChange={setExpectedHarvestDate}
+              minDate={sowingDate ? new Date(sowingDate) : new Date()}
+              helper="Projected date when crop reaches maturity"
             />
 
             <AppInput

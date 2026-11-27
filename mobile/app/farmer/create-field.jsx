@@ -17,6 +17,13 @@ import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from "../../constants/theme";
 import FarmerHeader from "../../components/ui/FarmerHeader";
 import AppInput from "../../components/ui/AppInput";
 import AppButton from "../../components/ui/AppButton";
+import SyncStatus from "../../components/SyncStatus";
+import useNetworkStatus from "../../hooks/useNetworkStatus";
+import { enqueueOperation } from "../../services/syncService";
+import { generateLocalId, cacheFields } from "../../services/offlineStorage";
+import { getCurrentUserId } from "../../services/auth";
+import { getCurrentLocation } from "../../services/locationService";
+import { Ionicons } from "@expo/vector-icons";
 
 const COMMON_UNITS = ["acres", "hectares", "bigha", "sq m"];
 const SOIL_TYPES = ["Loamy", "Clay", "Black Cotton", "Alluvial", "Sandy", "Red Soil"];
@@ -30,10 +37,37 @@ export default function CreateField() {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [notes, setNotes] = useState("");
+  const [locating, setLocating] = useState(false);
+  const [locationAccuracy, setLocationAccuracy] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [apiError, setApiError] = useState("");
+
+  const { isOnline } = useNetworkStatus();
+
+  const handleFetchCurrentLocation = async () => {
+    try {
+      setLocating(true);
+      const res = await getCurrentLocation();
+      if (!res.success) {
+        Alert.alert("Location Notice", res.error || "Unable to acquire location.");
+        return;
+      }
+
+      setLatitude(String(res.latitude));
+      setLongitude(String(res.longitude));
+      setLocationAccuracy(res.accuracy);
+
+      if (!locationName.trim() && res.locationName) {
+        setLocationName(res.locationName);
+      }
+    } catch (err) {
+      Alert.alert("Location Error", "Could not acquire GPS position.");
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const handleCreateField = async () => {
     setErrors({});
@@ -66,6 +100,7 @@ export default function CreateField() {
 
     try {
       setLoading(true);
+      const uid = await getCurrentUserId();
 
       const combinedNotes = [
         soilType ? `Soil: ${soilType}` : null,
@@ -84,14 +119,57 @@ export default function CreateField() {
         notes: combinedNotes || null,
       };
 
-      await API.post("/fields", payload);
+      if (!isOnline) {
+        const localId = generateLocalId("fld");
+        await enqueueOperation({
+          userId: uid,
+          recordType: "field",
+          operationType: "create",
+          localRecordId: localId,
+          endpoint: "/fields",
+          httpMethod: "POST",
+          payload,
+        });
 
-      setApiError("✓ Field plot successfully added.");
-      setTimeout(() => {
-        router.replace("/farmer/fields");
-      }, 800);
+        setApiError("✓ Saved on this device. Will sync when back online.");
+        setTimeout(() => {
+          router.replace("/farmer/fields");
+        }, 800);
+        return;
+      }
+
+      try {
+        const res = await API.post("/fields", payload);
+        if (res.data?.field) {
+          await cacheFields(uid, [res.data.field]);
+        }
+        setApiError("✓ Field plot successfully added.");
+        setTimeout(() => {
+          router.replace("/farmer/fields");
+        }, 800);
+      } catch (reqErr) {
+        if (!reqErr.response) {
+          const localId = generateLocalId("fld");
+          await enqueueOperation({
+            userId: uid,
+            recordType: "field",
+            operationType: "create",
+            localRecordId: localId,
+            endpoint: "/fields",
+            httpMethod: "POST",
+            payload,
+          });
+
+          setApiError("✓ Saved on this device. Queued for sync.");
+          setTimeout(() => {
+            router.replace("/farmer/fields");
+          }, 800);
+        } else {
+          setApiError(reqErr.response?.data?.message || "Unable to create field. Please try again.");
+        }
+      }
     } catch (error) {
-      console.log("CREATE FIELD ERROR:", error.response?.data || error.message);
+      console.log("CREATE FIELD ERROR:", error.message);
       setApiError("Unable to create field. Please check your information and try again.");
     } finally {
       setLoading(false);
@@ -108,6 +186,9 @@ export default function CreateField() {
         subtitle="Add a farm area to start tracking crops."
         showBack={true}
       />
+
+      {/* Offline Status Banner */}
+      <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -200,8 +281,30 @@ export default function CreateField() {
           </View>
 
           {/* SECTION: OPTIONAL COORDINATES & NOTES */}
-          <Text style={styles.sectionHeader}>COORDINATES & NOTES</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <Text style={[styles.sectionHeader, { marginBottom: 0 }]}>COORDINATES & LOCATION</Text>
+            <TouchableOpacity
+              style={styles.gpsButton}
+              onPress={handleFetchCurrentLocation}
+              disabled={locating}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="location" size={14} color="#FFFFFF" />
+              <Text style={styles.gpsButtonText}>
+                {locating ? "Acquiring..." : "Use Current GPS"}
+              </Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.sectionCard}>
+            {locationAccuracy !== null && (
+              <View style={styles.accuracyBanner}>
+                <Ionicons name="checkmark-circle" size={14} color={COLORS.primary} />
+                <Text style={styles.accuracyBannerText}>
+                  GPS Captured: ±{locationAccuracy}m accuracy
+                </Text>
+              </View>
+            )}
+
             <View style={styles.coordsRow}>
               <View style={styles.coordCol}>
                 <AppInput
@@ -357,5 +460,34 @@ const styles = StyleSheet.create({
   },
   buttonGap: {
     width: SPACING.md,
+  },
+  gpsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full || 20,
+  },
+  gpsButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  accuracyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.sm,
+  },
+  accuracyBannerText: {
+    fontSize: 12,
+    color: COLORS.primaryDark,
+    fontWeight: "500",
   },
 });

@@ -18,6 +18,7 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../services/api";
+import AppDatePicker from "../../components/ui/AppDatePicker";
 
 export default function CreateBreedingCross() {
   const router = useRouter();
@@ -376,26 +377,15 @@ export default function CreateBreedingCross() {
             {/* Two Column: 5. Cross Date & 6. Generation */}
             <View style={styles.twoColumnRow}>
               {/* Cross Date */}
-              <View style={[styles.inputGroup, styles.halfColumn]}>
-                <Text style={styles.label}>
-                  Cross Date <Text style={styles.required}>*</Text>
-                </Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="calendar-outline"
-                    size={17}
-                    color="#546E7A"
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#90A4AE"
-                    value={crossDate}
-                    onChangeText={setCrossDate}
-                    editable={!submitting}
-                  />
-                </View>
+              <View style={[styles.halfColumn]}>
+                <AppDatePicker
+                  label="Cross Date"
+                  placeholder="Select cross date"
+                  value={crossDate}
+                  onChange={setCrossDate}
+                  isRequired={true}
+                  maxDate={new Date()}
+                />
               </View>
 
               {/* Generation */}
@@ -411,7 +401,8 @@ export default function CreateBreedingCross() {
                   <TextInput
                     style={styles.textInput}
                     placeholder="e.g. F1, F2, BC1"
-                    placeholderTextColor="#90A4AE"
+                    placeholderTextColor="#64748B"
+                    cursorColor="#1B5E20"
                     value={generation}
                     onChangeText={setGeneration}
                     autoCapitalize="characters"
@@ -779,7 +770,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
   },
   multilineWrapper: {
     paddingVertical: 10,

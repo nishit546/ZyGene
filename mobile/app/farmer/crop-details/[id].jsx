@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,41 +11,116 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import API from "../../../services/api";
 import FarmerHeader from "../../../components/ui/FarmerHeader";
 import { COLORS } from "../../../constants/theme";
+import SyncStatus from "../../../components/SyncStatus";
+import useNetworkStatus from "../../../hooks/useNetworkStatus";
+import { getCachedCropById } from "../../../services/offlineStorage";
+import { copyToClipboard, shareText, shareFile } from "../../../services/shareService";
+import { exportCropReportPDF } from "../../../services/fileService";
+import ContactPickerModal from "../../../components/ContactPickerModal";
+import ReportExportCard from "../../../components/ui/ReportExportCard";
 
 export default function CropDetails() {
   const { id } = useLocalSearchParams();
 
   const [crop, setCrop] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [contactModalVisible, setContactModalVisible] = useState(false);
+  const [lastPdfUri, setLastPdfUri] = useState(null);
+  const [lastPdfFilename, setLastPdfFilename] = useState(null);
 
-  const loadCrop = async () => {
+  const handleCopyCropId = () => {
+    copyToClipboard(id, "Crop ID");
+  };
+
+  const buildCropSummary = () => {
+    return [
+      `🌾 *ZyGene Crop Summary: ${crop?.crop_name || "Crop"}*`,
+      `• Variety: ${crop?.variety || "Standard"}`,
+      `• Field: ${crop?.field_name || "Not specified"}`,
+      `• Status: ${crop?.crop_status || "Active"}`,
+      `• Sowing Date: ${crop?.sowing_date || "Not recorded"}`,
+      `• Expected Harvest: ${crop?.expected_harvest_date || "TBD"}`,
+      `• Crop ID: ${id}`,
+      `Shared from ZyGene AgriTech Platform.`,
+    ].join("\n");
+  };
+
+  const handleShareSummary = async () => {
+    const summary = buildCropSummary();
+    await shareText({
+      title: `Crop Summary: ${crop?.crop_name || "Crop"}`,
+      message: summary,
+    });
+  };
+
+  const handleSelectContact = async (contact) => {
+    const summary = buildCropSummary();
+    await shareText({
+      title: `Crop Report for ${contact.name}`,
+      message: `Hi ${contact.name},\n\nHere is the crop report:\n${summary}`,
+    });
+  };
+
+  const handleExportPDF = async () => {
+    if (!crop) return { success: false, error: "Crop data unavailable" };
     try {
-      const response = await API.get(`/crops/${id}`);
+      setExporting(true);
+      const res = await exportCropReportPDF(crop);
+      if (res.success && res.uri) {
+        setLastPdfUri(res.uri);
+        setLastPdfFilename(res.filename);
+        return { success: true, uri: res.uri, filename: res.filename };
+      } else if (res.success) {
+        return { success: true, filename: res.filename || "Report.pdf" };
+      } else {
+        return { success: false, error: res.error || "Unable to export report." };
+      }
+    } catch (e) {
+      return { success: false, error: "Failed to generate PDF report." };
+    } finally {
+      setExporting(false);
+    }
+  };
 
-      console.log(
-        "CROP DETAILS:",
-        response.data
-      );
+  const { isOnline } = useNetworkStatus(() => {
+    loadCrop();
+  });
 
-      setCrop(response.data.crop);
+  const loadCrop = useCallback(async () => {
+    try {
+      setLoading(true);
+      if (isOnline && !String(id).startsWith("loc_")) {
+        try {
+          const response = await API.get(`/crops/${id}`);
+          if (response.data?.crop) {
+            setCrop(response.data.crop);
+            return;
+          }
+        } catch (apiErr) {
+          console.log("[crop-details] API fetch error, checking SQLite cache:", apiErr.message);
+        }
+      }
+
+      // Offline or fallback: check SQLite
+      const cached = await getCachedCropById(id);
+      if (cached) {
+        setCrop(cached);
+      } else {
+        Alert.alert("Notice", "Crop details not available offline yet.");
+      }
     } catch (error) {
-      console.log(
-        "CROP DETAILS ERROR:",
-        error.response?.data || error.message
-      );
-
-      Alert.alert(
-        "Error",
-        error.response?.data?.message ||
-          "Failed to load crop."
-      );
+      console.log("CROP DETAILS ERROR:", error.message);
+      const cached = await getCachedCropById(id);
+      if (cached) setCrop(cached);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, isOnline]);
 
   useEffect(() => {
     if (id) {
@@ -92,6 +167,7 @@ export default function CropDetails() {
       <ScrollView
         contentContainerStyle={styles.container}
       >
+        <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
 
       {/* Field */}
 
@@ -188,6 +264,33 @@ export default function CropDetails() {
         </Text>
       </TouchableOpacity>
 
+      {/* PROFESSIONAL PDF EXPORT SECTION */}
+      <ReportExportCard
+        title={`${crop.crop_name || "Crop"} Performance & Lifecycle Report`}
+        subtitle="Generate an official offline-ready PDF summary with field conditions, lifecycle progression, and growth measurements."
+        onExport={handleExportPDF}
+        onShare={lastPdfUri ? () => shareFile(lastPdfUri, lastPdfFilename) : handleShareSummary}
+        onViewFiles={() => router.push("/farmer/files")}
+      />
+
+      {/* QUICK NATIVE ACTIONS: Copy, Share, Contacts */}
+      <View style={styles.nativeActionStrip}>
+        <TouchableOpacity style={styles.actionChip} onPress={handleCopyCropId}>
+          <Ionicons name="copy-outline" size={15} color={COLORS.primary} />
+          <Text style={styles.actionChipText}>Copy ID</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionChip} onPress={handleShareSummary}>
+          <Ionicons name="share-social-outline" size={15} color={COLORS.primary} />
+          <Text style={styles.actionChipText}>Share Summary</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionChip} onPress={() => setContactModalVisible(true)}>
+          <Ionicons name="people-outline" size={15} color={COLORS.primary} />
+          <Text style={styles.actionChipText}>Share Contact</Text>
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={styles.quickAddButton}
         onPress={() =>
@@ -201,6 +304,13 @@ export default function CropDetails() {
         </Text>
       </TouchableOpacity>
     </ScrollView>
+
+    <ContactPickerModal
+      visible={contactModalVisible}
+      onClose={() => setContactModalVisible(false)}
+      onSelectContact={handleSelectContact}
+      title={`Share ${crop?.crop_name || "Crop"} Summary`}
+    />
     </SafeAreaView>
   );
 }
@@ -314,5 +424,35 @@ const styles = StyleSheet.create({
     color: "#1b5e20",
     fontSize: 17,
     fontWeight: "bold",
+  },
+  nativeActionStrip: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 6,
+    flexWrap: "wrap",
+  },
+  actionChip: {
+    flex: 1,
+    minWidth: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  actionChipPrimary: {
+    backgroundColor: COLORS.primary || "#2E7D32",
+    borderColor: COLORS.primary || "#2E7D32",
+  },
+  actionChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
   },
 });

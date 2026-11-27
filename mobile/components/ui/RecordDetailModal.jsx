@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY, SHADOWS } from "../../constants/theme";
 import AppButton from "./AppButton";
+import { copyToClipboard, shareText } from "../../services/shareService";
 
 /**
  * Reusable unified Record Detail modal for Farmer activities.
@@ -47,6 +48,29 @@ export default function RecordDetailModal({
         },
       ]
     );
+  };
+
+  const formatRecordText = () => {
+    const lines = [
+      `🌱 *ZyGene Activity: ${title}*`,
+      type ? `• Type: ${type}` : null,
+      primaryValue ? `• Value: ${primaryValue}` : null,
+      date ? `• Date: ${date}` : null,
+      ...details.map((d) => `• ${d.label}: ${d.value}`),
+      notes ? `• Notes: ${notes}` : null,
+      `Shared from ZyGene AgriTech Platform.`,
+    ].filter(Boolean);
+    return lines.join("\n");
+  };
+
+  const handleShare = async () => {
+    const text = formatRecordText();
+    await shareText({ title: `${title} Record`, message: text });
+  };
+
+  const handleCopy = () => {
+    const text = formatRecordText();
+    copyToClipboard(text, `${title} Summary`);
   };
 
   return (
@@ -103,6 +127,19 @@ export default function RecordDetailModal({
                 <Text style={styles.dateText}>Recorded {date}</Text>
               </View>
             ) : null}
+
+            {/* Quick Share / Copy Strip */}
+            <View style={styles.actionChipStrip}>
+              <TouchableOpacity style={styles.actionChipBtn} onPress={handleCopy}>
+                <Ionicons name="copy-outline" size={14} color={COLORS.primary} />
+                <Text style={styles.actionChipBtnText}>Copy Summary</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionChipBtn} onPress={handleShare}>
+                <Ionicons name="share-social-outline" size={14} color={COLORS.primary} />
+                <Text style={styles.actionChipBtnText}>Share Record</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Important Values List */}
@@ -301,5 +338,30 @@ const styles = StyleSheet.create({
   },
   actionGap: {
     width: SPACING.md,
+  },
+  actionChipStrip: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  actionChipBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    backgroundColor: COLORS.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 8,
+    borderRadius: RADIUS.sm,
+  },
+  actionChipBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.primary,
   },
 });

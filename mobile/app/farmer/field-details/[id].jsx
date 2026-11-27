@@ -19,6 +19,9 @@ import { COLORS, SPACING, RADIUS, TYPOGRAPHY, SHADOWS } from "../../../constants
 import FarmerHeader from "../../../components/ui/FarmerHeader";
 import StatusBadge from "../../../components/ui/StatusBadge";
 import ErrorState from "../../../components/ErrorState";
+import FarmMapView from "../../../components/FarmMapView";
+import ContactPickerModal from "../../../components/ContactPickerModal";
+import { copyToClipboard, shareText } from "../../../services/shareService";
 
 export default function FieldDetails() {
   const router = useRouter();
@@ -34,6 +37,47 @@ export default function FieldDetails() {
   const [cropsError, setCropsError] = useState(false);
   
   const [overflowVisible, setOverflowVisible] = useState(false);
+  const [contactModalVisible, setContactModalVisible] = useState(false);
+
+  const handleCopyCoordinates = () => {
+    if (!field?.latitude || !field?.longitude) {
+      Alert.alert("Coordinates Unavailable", "This field does not have GPS coordinates.");
+      return;
+    }
+    const coordsText = `${field.latitude}, ${field.longitude}`;
+    copyToClipboard(coordsText, "Field GPS Coordinates");
+  };
+
+  const buildFieldSummary = () => {
+    return [
+      `🌱 *ZyGene Field Summary: ${field?.field_name || "Field"}*`,
+      `• Location: ${field?.location || field?.location_name || "Not specified"}`,
+      `• Area: ${field?.area ? `${field.area} ${field?.area_unit || "acres"}` : "Unspecified"}`,
+      field?.latitude && field?.longitude ? `• GPS: ${field.latitude}, ${field.longitude}` : null,
+      `• Total Crops: ${fieldCrops.length}`,
+      field?.description ? `• Notes: ${field.description}` : null,
+      `Shared from ZyGene AgriTech Platform.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
+
+  const handleShareField = async () => {
+    setOverflowVisible(false);
+    const summary = buildFieldSummary();
+    await shareText({
+      title: `Field Report: ${field?.field_name || "Field"}`,
+      message: summary,
+    });
+  };
+
+  const handleSelectContactForShare = async (contact) => {
+    const summary = buildFieldSummary();
+    await shareText({
+      title: `Field Report for ${contact.name}`,
+      message: `Hi ${contact.name},\n\nHere is the field information:\n${summary}`,
+    });
+  };
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -226,8 +270,49 @@ export default function FieldDetails() {
                 </View>
               </>
             )}
+            {field.latitude && field.longitude && (
+              <>
+                <View style={styles.infoGridDivider} />
+                <View style={styles.infoGridRow}>
+                  <View style={styles.infoCol}>
+                    <Text style={styles.infoLabel}>GPS Coordinates</Text>
+                    <Text style={styles.infoValue}>
+                      {Number(field.latitude).toFixed(4)}°, {Number(field.longitude).toFixed(4)}°
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.copyChip}
+                    onPress={handleCopyCoordinates}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="copy-outline" size={13} color={COLORS.primary} />
+                    <Text style={styles.copyChipText}>Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
+
+        {/* MAP PREVIEW IF COORDINATES ARE PRESENT */}
+        {field.latitude && field.longitude ? (
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeaderBetween}>
+              <Text style={styles.sectionHeader}>Plot Location & Map</Text>
+              <TouchableOpacity onPress={() => router.push("/farmer/farm-map")}>
+                <Text style={styles.actionText}>Full Map →</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ borderRadius: RADIUS.md, overflow: "hidden" }}>
+              <FarmMapView
+                fields={[field]}
+                selectedField={field}
+                interactive={false}
+                style={{ height: 180 }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         {/* 7. FIELD CROP SUMMARY */}
         <View style={styles.sectionBlock}>
@@ -338,7 +423,37 @@ export default function FieldDetails() {
       <Modal visible={overflowVisible} transparent animationType="fade" onRequestClose={() => setOverflowVisible(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setOverflowVisible(false)}>
           <View style={styles.overflowMenu}>
-            {/* Edit action skipped as per instructions since there's no edit form */}
+            <TouchableOpacity style={styles.overflowMenuItem} onPress={handleShareField}>
+              <Ionicons name="share-social-outline" size={18} color={COLORS.text} style={styles.overflowMenuIcon} />
+              <Text style={styles.overflowMenuText}>Share Summary</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.overflowMenuItem}
+              onPress={() => {
+                setOverflowVisible(false);
+                setContactModalVisible(true);
+              }}
+            >
+              <Ionicons name="people-outline" size={18} color={COLORS.text} style={styles.overflowMenuIcon} />
+              <Text style={styles.overflowMenuText}>Share with Contact</Text>
+            </TouchableOpacity>
+
+            {field?.latitude && field?.longitude ? (
+              <TouchableOpacity
+                style={styles.overflowMenuItem}
+                onPress={() => {
+                  setOverflowVisible(false);
+                  handleCopyCoordinates();
+                }}
+              >
+                <Ionicons name="copy-outline" size={18} color={COLORS.text} style={styles.overflowMenuIcon} />
+                <Text style={styles.overflowMenuText}>Copy GPS Coordinates</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={{ height: 1, backgroundColor: COLORS.borderLight, marginVertical: 4 }} />
+
             <TouchableOpacity style={styles.overflowMenuItem} onPress={handleDeleteField} accessibilityRole="button" accessibilityLabel="Delete field">
               <Ionicons name="trash-outline" size={18} color={COLORS.danger} style={styles.overflowMenuIcon} />
               <Text style={[styles.overflowMenuText, { color: COLORS.danger }]}>Delete Field</Text>
@@ -346,6 +461,14 @@ export default function FieldDetails() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* CONTACT PICKER MODAL */}
+      <ContactPickerModal
+        visible={contactModalVisible}
+        onClose={() => setContactModalVisible(false)}
+        onSelectContact={handleSelectContactForShare}
+        title={`Share ${field?.field_name || "Field"} Report`}
+      />
     </SafeAreaView>
   );
 }
@@ -420,8 +543,23 @@ const styles = StyleSheet.create({
   actionRowText: { flex: 1, fontSize: 15, fontWeight: "500", color: COLORS.text },
 
   modalOverlay: { flex: 1, justifyContent: "flex-start", alignItems: "flex-end", backgroundColor: "rgba(0,0,0,0.1)" },
-  overflowMenu: { backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: 8, marginTop: 60, marginRight: SPACING.lg, width: 160, ...SHADOWS.medium },
+  overflowMenu: { backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: 8, marginTop: 60, marginRight: SPACING.lg, width: 200, ...SHADOWS.medium },
   overflowMenuItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12 },
   overflowMenuIcon: { marginRight: 10 },
-  overflowMenuText: { fontSize: 15, fontWeight: "500", color: COLORS.text },
+  overflowMenuText: { fontSize: 14, fontWeight: "500", color: COLORS.text },
+  copyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.sm,
+    alignSelf: "center",
+  },
+  copyChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
 });

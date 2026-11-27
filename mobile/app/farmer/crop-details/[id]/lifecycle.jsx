@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,54 +12,40 @@ import {
   StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  useLocalSearchParams,
-  router,
-} from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
+
 import API from "../../../../services/api";
 import FarmerHeader from "../../../../components/ui/FarmerHeader";
+import SyncStatus from "../../../../components/SyncStatus";
+import useNetworkStatus from "../../../../hooks/useNetworkStatus";
+import {
+  cacheLifecycleRecords,
+  getCachedLifecycleRecords,
+  generateLocalId,
+} from "../../../../services/offlineStorage";
+import {
+  enqueueOperation,
+  subscribeSyncEvents,
+} from "../../../../services/syncService";
+import { getCurrentUserId } from "../../../../services/auth";
 import { COLORS } from "../../../../constants/theme";
+import AppDatePicker from "../../../../components/ui/AppDatePicker";
 
 const STAGES = [
-  {
-    value: "seed_sowing",
-    label: "Seed Sowing",
-  },
-  {
-    value: "germination",
-    label: "Germination",
-  },
-  {
-    value: "seedling",
-    label: "Seedling",
-  },
-  {
-    value: "vegetative",
-    label: "Vegetative",
-  },
-  {
-    value: "flowering",
-    label: "Flowering",
-  },
-  {
-    value: "fruiting",
-    label: "Fruiting",
-  },
-  {
-    value: "maturity",
-    label: "Maturity",
-  },
-  {
-    value: "harvest",
-    label: "Harvest",
-  },
+  { value: "seed_sowing", label: "Seed Sowing" },
+  { value: "germination", label: "Germination" },
+  { value: "seedling", label: "Seedling" },
+  { value: "vegetative", label: "Vegetative" },
+  { value: "flowering", label: "Flowering" },
+  { value: "fruiting", label: "Fruiting" },
+  { value: "maturity", label: "Maturity" },
+  { value: "harvest", label: "Harvest" },
 ];
 
 export default function Lifecycle() {
   const { id } = useLocalSearchParams();
 
   const [records, setRecords] = useState([]);
-
   const [stage, setStage] = useState("");
   const [recordDate, setRecordDate] = useState("");
   const [recordTime, setRecordTime] = useState("");
@@ -69,179 +55,172 @@ export default function Lifecycle() {
 
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [userId, setUserId] = useState(null);
 
-  // LOAD LIFECYCLE RECORDS
+  const { isOnline } = useNetworkStatus(() => {
+    loadLifecycle();
+  });
 
-  const loadLifecycle = async () => {
+  const loadLifecycle = useCallback(async () => {
     try {
-      const response = await API.get(
-        `/lifecycle/${id}`
-      );
+      setLoading(true);
+      const uid = await getCurrentUserId();
+      setUserId(uid);
 
-      console.log(
-        "LIFECYCLE:",
-        response.data
-      );
+      if (isOnline && !String(id).startsWith("loc_")) {
+        try {
+          const response = await API.get(`/lifecycle/${id}`);
+          const fetched = response.data?.lifecycle || [];
+          setRecords(fetched);
+          await cacheLifecycleRecords(uid, id, fetched);
+          return;
+        } catch (apiErr) {
+          console.log("[lifecycle] API fetch failed, loading SQLite cache:", apiErr.message);
+        }
+      }
 
-      setRecords(
-        response.data.lifecycle || []
-      );
+      // Offline or fallback: load from SQLite
+      const cached = await getCachedLifecycleRecords(id);
+      setRecords(cached);
     } catch (error) {
-      console.log(
-        "LIFECYCLE ERROR:",
-        error.response?.data ||
-          error.message
-      );
-
-      Alert.alert(
-        "Error",
-        error.response?.data?.message ||
-          "Failed to load lifecycle records."
-      );
+      console.log("LIFECYCLE ERROR:", error.message);
+      const cached = await getCachedLifecycleRecords(id);
+      setRecords(cached);
     } finally {
       setLoading(false);
     }
-  };
-
-  // LOAD WHEN SCREEN OPENS
+  }, [id, isOnline]);
 
   useEffect(() => {
     if (id) {
       loadLifecycle();
     }
-  }, [id]);
 
-  // CREATE LIFECYCLE RECORD
+    const unsubscribe = subscribeSyncEvents((event) => {
+      if (event.type === "ITEM_SYNCED" || event.type === "SYNC_COMPLETE") {
+        loadLifecycle();
+      }
+    });
+    return () => unsubscribe();
+  }, [id, loadLifecycle]);
 
   const handleCreateRecord = async () => {
-    console.log(
-      "CREATE LIFECYCLE CLICKED"
-    );
-
-    console.log("FORM DATA:", {
-      crop_id: id,
-      stage,
-      record_date: recordDate,
-      record_time: recordTime,
-      latitude,
-      longitude,
-      notes,
-    });
-
     if (!stage) {
-      Alert.alert(
-        "Missing Information",
-        "Please select a lifecycle stage."
-      );
-
+      Alert.alert("Missing Information", "Please select a lifecycle stage.");
       return;
     }
 
     if (!recordDate.trim()) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter the record date."
-      );
-
+      Alert.alert("Missing Information", "Please enter the record date.");
       return;
     }
 
-    const datePattern =
-      /^\d{4}-\d{2}-\d{2}$/;
-
-    if (
-      !datePattern.test(
-        recordDate.trim()
-      )
-    ) {
-      Alert.alert(
-        "Invalid Date",
-        "Please use YYYY-MM-DD format."
-      );
-
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(recordDate.trim())) {
+      Alert.alert("Invalid Date", "Please use YYYY-MM-DD format.");
       return;
     }
+
+    const payload = {
+      crop_id: Number(id) || id,
+      stage: stage,
+      record_date: recordDate.trim(),
+      record_time: recordTime.trim() || null,
+      latitude: latitude.trim() ? Number(latitude) : null,
+      longitude: longitude.trim() ? Number(longitude) : null,
+      notes: notes.trim() || null,
+    };
 
     try {
       setCreating(true);
+      const uid = userId || (await getCurrentUserId());
 
-      const payload = {
-        crop_id: Number(id),
+      // If offline or parent crop is local: save locally and enqueue
+      if (!isOnline || String(id).startsWith("loc_")) {
+        const localId = generateLocalId("lc");
+        await enqueueOperation({
+          userId: uid,
+          recordType: "lifecycle",
+          operationType: "create",
+          localRecordId: localId,
+          parentLocalId: String(id).startsWith("loc_") ? String(id) : null,
+          parentServerId: !String(id).startsWith("loc_") ? Number(id) : null,
+          endpoint: "/lifecycle",
+          httpMethod: "POST",
+          payload,
+        });
 
-        stage: stage,
-
-        record_date:
-          recordDate.trim(),
-
-        record_time:
-          recordTime.trim() || null,
-
-        latitude:
-          latitude.trim()
-            ? Number(latitude)
-            : null,
-
-        longitude:
-          longitude.trim()
-            ? Number(longitude)
-            : null,
-
-        notes:
-          notes.trim() || null,
-      };
-
-      console.log(
-        "SENDING LIFECYCLE:",
-        payload
-      );
-
-      const response =
-        await API.post(
-          "/lifecycle",
-          payload
+        Alert.alert(
+          "Saved on this device",
+          "Lifecycle record saved locally. It will sync automatically when you are back online."
         );
 
-      console.log(
-        "LIFECYCLE CREATED:",
-        response.data
-      );
+        setStage("");
+        setRecordDate("");
+        setRecordTime("");
+        setLatitude("");
+        setLongitude("");
+        setNotes("");
 
-      Alert.alert(
-        "Success",
-        "Lifecycle record created successfully."
-      );
+        const cached = await getCachedLifecycleRecords(id);
+        setRecords(cached);
+        return;
+      }
 
-      setStage("");
-      setRecordDate("");
-      setRecordTime("");
-      setLatitude("");
-      setLongitude("");
-      setNotes("");
+      // Online: send request to server
+      try {
+        const response = await API.post("/lifecycle", payload);
+        Alert.alert("Success", "Lifecycle record created successfully.");
 
-      await loadLifecycle();
-    } catch (error) {
-      console.log(
-        "CREATE LIFECYCLE ERROR:",
-        error
-      );
+        setStage("");
+        setRecordDate("");
+        setRecordTime("");
+        setLatitude("");
+        setLongitude("");
+        setNotes("");
 
-      console.log(
-        "SERVER ERROR:",
-        error.response?.data
-      );
+        if (response.data?.lifecycle) {
+          await cacheLifecycleRecords(uid, id, [response.data.lifecycle]);
+        }
+        await loadLifecycle();
+      } catch (reqError) {
+        if (!reqError.response) {
+          // Connection lost: save locally
+          const localId = generateLocalId("lc");
+          await enqueueOperation({
+            userId: uid,
+            recordType: "lifecycle",
+            operationType: "create",
+            localRecordId: localId,
+            parentLocalId: String(id).startsWith("loc_") ? String(id) : null,
+            parentServerId: !String(id).startsWith("loc_") ? Number(id) : null,
+            endpoint: "/lifecycle",
+            httpMethod: "POST",
+            payload,
+          });
 
-      Alert.alert(
-        "Error",
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to create lifecycle record."
-      );
+          Alert.alert(
+            "Saved on this device",
+            "Connection interrupted. Saved locally and queued for automatic sync."
+          );
+
+          setStage("");
+          setRecordDate("");
+          setRecordTime("");
+          setLatitude("");
+          setLongitude("");
+          setNotes("");
+
+          const cached = await getCachedLifecycleRecords(id);
+          setRecords(cached);
+        } else {
+          Alert.alert("Error", reqError.response?.data?.message || "Failed to create lifecycle record.");
+        }
+      }
     } finally {
       setCreating(false);
     }
   };
-
-  // LOADING
 
   if (loading) {
     return (
@@ -249,15 +228,11 @@ export default function Lifecycle() {
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>
-            Loading lifecycle...
-          </Text>
+          <Text style={styles.loadingText}>Loading lifecycle...</Text>
         </View>
       </SafeAreaView>
     );
   }
-
-  // SCREEN
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.surface }}>
@@ -267,559 +242,397 @@ export default function Lifecycle() {
         subtitle={`Crop ID: ${id}`}
         showBack={true}
       />
-      <ScrollView
-        contentContainerStyle={
-          styles.container
-        }
-      >
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Offline / Sync Banner */}
+        <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
 
-      {/* LIFECYCLE RECORDS */}
+        {/* Existing Records */}
+        <Text style={[styles.sectionTitle, { marginTop: 14 }]}>Lifecycle Records</Text>
 
-      <Text style={styles.sectionTitle}>
-        Lifecycle Records
-      </Text>
+        {records.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>No lifecycle records yet.</Text>
+          </View>
+        ) : (
+          records.map((record) => (
+            <View key={record.id || record.local_id} style={styles.recordCard}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={styles.stage}>
+                  {STAGES.find((item) => item.value === record.stage)?.label || record.stage}
+                </Text>
+                {record.sync_status === "pending" && (
+                  <View style={styles.pendingBadge}>
+                    <Text style={styles.pendingBadgeText}>Pending Sync</Text>
+                  </View>
+                )}
+                {record.sync_status === "failed" && (
+                  <View style={styles.failedBadge}>
+                    <Text style={styles.failedBadgeText}>Sync Failed</Text>
+                  </View>
+                )}
+              </View>
 
-      {records.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>
-            No lifecycle records yet.
-          </Text>
-        </View>
-      ) : (
-        records.map((record) => (
-          <View
-            key={record.id}
-            style={styles.recordCard}
-          >
-            {/* STAGE */}
+              <Text style={styles.recordText}>Date: {record.record_date}</Text>
 
-            <Text style={styles.stage}>
-              {STAGES.find(
-                (item) =>
-                  item.value ===
-                  record.stage
-              )?.label ||
-                record.stage}
-            </Text>
+              {record.record_time && (
+                <Text style={styles.recordText}>Time: {record.record_time}</Text>
+              )}
 
-            {/* DATE */}
-
-            <Text style={styles.recordText}>
-              Date:{" "}
-              {record.record_date}
-            </Text>
-
-            {/* TIME */}
-
-            {record.record_time && (
-              <Text style={styles.recordText}>
-                Time:{" "}
-                {record.record_time}
-              </Text>
-            )}
-
-            {/* LOCATION */}
-
-            {record.latitude !== null &&
-              record.latitude !== undefined &&
-              record.longitude !== null &&
-              record.longitude !==
-                undefined && (
-                <Text
-                  style={styles.recordText}
-                >
-                  Location:{" "}
-                  {record.latitude},{" "}
-                  {record.longitude}
+              {record.latitude !== null && record.latitude !== undefined && (
+                <Text style={styles.recordText}>
+                  Location: {record.latitude}, {record.longitude}
                 </Text>
               )}
 
-            {/* NOTES */}
+              {record.notes && (
+                <Text style={styles.recordText}>Notes: {record.notes}</Text>
+              )}
 
-            {record.notes && (
-              <Text
-                style={styles.recordText}
+              {/* Activity Navigation Buttons */}
+              <TouchableOpacity
+                style={styles.measurementButton}
+                onPress={() => router.push(`/farmer/crop-details/${id}/measurements/${record.id || record.local_id}`)}
               >
-                Notes: {record.notes}
-              </Text>
-            )}
+                <Text style={styles.measurementButtonText}>View Measurements</Text>
+              </TouchableOpacity>
 
-            {/* MEASUREMENTS */}
-
-            <TouchableOpacity
-              style={
-                styles.measurementButton
-              }
-              onPress={() =>
-                router.push(
-                  `/farmer/crop-details/${id}/measurements/${record.id}`
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.measurementButtonText
-                }
+              <TouchableOpacity
+                style={styles.photoButton}
+                onPress={() => router.push(`/farmer/crop-details/${id}/photos/${record.id || record.local_id}`)}
               >
-                View Measurements
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.photoButtonText}>View Photos</Text>
+              </TouchableOpacity>
 
-            {/* PHOTOS */}
-
-            <TouchableOpacity
-              style={styles.photoButton}
-              onPress={() =>
-                router.push(
-                  `/farmer/crop-details/${id}/photos/${record.id}`
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.photoButtonText
-                }
+              <TouchableOpacity
+                style={styles.irrigationButton}
+                onPress={() => router.push(`/farmer/crop-details/${id}/irrigation/${record.id || record.local_id}`)}
               >
-                View Photos
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.irrigationButtonText}>View Irrigation</Text>
+              </TouchableOpacity>
 
-            {/* IRRIGATION */}
-
-            <TouchableOpacity
-              style={
-                styles.irrigationButton
-              }
-              onPress={() =>
-                router.push(
-                  `/farmer/crop-details/${id}/irrigation/${record.id}`
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.irrigationButtonText
-                }
+              <TouchableOpacity
+                style={styles.treatmentButton}
+                onPress={() => router.push(`/farmer/crop-details/${id}/treatments/${record.id || record.local_id}`)}
               >
-                View Irrigation
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.treatmentButtonText}>View Treatments</Text>
+              </TouchableOpacity>
 
-            {/* TREATMENTS */}
-
-            <TouchableOpacity
-              style={
-                styles.treatmentButton
-              }
-              onPress={() =>
-                router.push(
-                  `/farmer/crop-details/${id}/treatments/${record.id}`
-                )
-              }
-            >
-              <Text
-                style={
-                  styles.treatmentButtonText
-                }
+              <TouchableOpacity
+                style={styles.diseasePestButton}
+                onPress={() => router.push(`/farmer/crop-details/${id}/disease-pest/${record.id || record.local_id}`)}
               >
-                View Treatments
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.diseasePestButtonText}>View Disease & Pest</Text>
+              </TouchableOpacity>
 
-
-{/* DISEASE-PEST */}
-            
-            <TouchableOpacity
-  style={styles.diseasePestButton}
-  onPress={() => {
-    console.log(
-      "DISEASE PEST CLICKED:",
-      id,
-      record.id
-    );
-
-    router.push(
-      `/farmer/crop-details/${id}/disease-pest/${record.id}`
-    );
-  }}
->
-  <Text style={styles.diseasePestButtonText}>
-    View Disease & Pest
-  </Text>
-</TouchableOpacity>
-          </View>
-        ))
-      )}
-
-      {/* ADD LIFECYCLE RECORD */}
-
-      <Text style={styles.sectionTitle}>
-        Add Lifecycle Record
-      </Text>
-
-      {/* Stage */}
-
-      <Text style={styles.label}>
-        Stage *
-      </Text>
-
-      <View style={styles.stageContainer}>
-        {STAGES.map((item) => {
-          const selected =
-            stage === item.value;
-
-          return (
-            <TouchableOpacity
-              key={item.value}
-              style={[
-                styles.stageOption,
-                selected &&
-                  styles.selectedStage,
-              ]}
-              onPress={() =>
-                setStage(item.value)
-              }
-            >
-              <Text
-                style={[
-                  styles.stageOptionText,
-                  selected &&
-                    styles.selectedStageText,
-                ]}
+              <TouchableOpacity
+                style={styles.harvestButton}
+                onPress={() => router.push(`/farmer/crop-details/${id}/harvest/${record.id || record.local_id}`)}
               >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Date */}
-
-      <Text style={styles.label}>
-        Record Date *
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="YYYY-MM-DD"
-        value={recordDate}
-        onChangeText={setRecordDate}
-      />
-
-      {/* Time */}
-
-      <Text style={styles.label}>
-        Record Time
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="HH:MM:SS"
-        value={recordTime}
-        onChangeText={setRecordTime}
-      />
-
-      {/* Latitude */}
-
-      <Text style={styles.label}>
-        Latitude
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. 23.0225"
-        value={latitude}
-        onChangeText={setLatitude}
-        keyboardType="decimal-pad"
-      />
-
-      {/* Longitude */}
-
-      <Text style={styles.label}>
-        Longitude
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. 72.5714"
-        value={longitude}
-        onChangeText={setLongitude}
-        keyboardType="decimal-pad"
-      />
-
-      {/* Notes */}
-
-      <Text style={styles.label}>
-        Notes
-      </Text>
-
-      <TextInput
-        style={[
-          styles.input,
-          styles.notesInput,
-        ]}
-        placeholder="Add observations..."
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={4}
-      />
-
-      {/* Add button */}
-
-      <TouchableOpacity
-        style={[
-          styles.button,
-          creating &&
-            styles.buttonDisabled,
-        ]}
-        onPress={
-          handleCreateRecord
-        }
-        disabled={creating}
-      >
-        {creating ? (
-          <ActivityIndicator
-            color="#fff"
-          />
-        ) : (
-          <Text style={styles.buttonText}>
-            Add Lifecycle Record
-          </Text>
+                <Text style={styles.harvestButtonText}>View Harvest</Text>
+              </TouchableOpacity>
+            </View>
+          ))
         )}
-      </TouchableOpacity>
-    </ScrollView>
+
+        {/* Add Lifecycle Record Form */}
+        <Text style={styles.sectionTitle}>Add Lifecycle Record</Text>
+
+        <Text style={styles.label}>Stage *</Text>
+        <View style={styles.stageContainer}>
+          {STAGES.map((item) => {
+            const selected = stage === item.value;
+            return (
+              <TouchableOpacity
+                key={item.value}
+                style={[styles.stageOption, selected && styles.selectedStage]}
+                onPress={() => setStage(item.value)}
+              >
+                <Text style={[styles.stageOptionText, selected && styles.selectedStageText]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <AppDatePicker
+          label="Record Date"
+          placeholder="Select record date"
+          value={recordDate}
+          onChange={setRecordDate}
+          isRequired={true}
+          maxDate={new Date()}
+        />
+
+        <Text style={styles.label}>Record Time</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="HH:MM:SS"
+          value={recordTime}
+          onChangeText={setRecordTime}
+        />
+
+        <Text style={styles.label}>Latitude</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 23.0225"
+          value={latitude}
+          onChangeText={setLatitude}
+          keyboardType="decimal-pad"
+        />
+
+        <Text style={styles.label}>Longitude</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 72.5714"
+          value={longitude}
+          onChangeText={setLongitude}
+          keyboardType="decimal-pad"
+        />
+
+        <Text style={styles.label}>Notes</Text>
+        <TextInput
+          style={[styles.input, styles.notesInput]}
+          placeholder="Add observations..."
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          numberOfLines={4}
+        />
+
+        <TouchableOpacity
+          style={[styles.button, creating && styles.buttonDisabled]}
+          onPress={handleCreateRecord}
+          disabled={creating}
+        >
+          {creating ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {!isOnline ? "Save on Device" : "Add Lifecycle Record"}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-// STYLES
-
 const styles = StyleSheet.create({
   container: {
-    padding: 24,
+    padding: 20,
     paddingBottom: 50,
     width: "100%",
     maxWidth: 860,
     alignSelf: "center",
   },
-
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-  },
-
-  title: {
-    fontSize: 30,
-    fontWeight: "bold",
-  },
-
-  cropText: {
-    fontSize: 15,
     color: "#666",
-    marginTop: 5,
-    marginBottom: 25,
   },
-
   sectionTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "bold",
-    marginTop: 10,
-    marginBottom: 15,
+    marginBottom: 12,
+    color: "#1F2937",
   },
-
   emptyBox: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#E5E7EB",
     borderRadius: 10,
-    padding: 18,
+    padding: 16,
     marginBottom: 20,
+    backgroundColor: "#FFFFFF",
   },
-
   emptyText: {
     color: "#777",
   },
-
-  // RECORD CARD
-
   recordCard: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: "#E5E7EB",
     borderRadius: 12,
     padding: 16,
     marginBottom: 15,
+    backgroundColor: "#FFFFFF",
   },
-
   stage: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: "bold",
     color: "#2e7d32",
-    marginBottom: 8,
+    marginBottom: 6,
   },
-
   recordText: {
-    fontSize: 15,
-    marginTop: 4,
+    fontSize: 14,
+    color: "#374151",
+    marginTop: 3,
   },
-
-  // MEASUREMENTS
-
+  pendingBadge: {
+    backgroundColor: "#FFF3E0",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  pendingBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#E65100",
+  },
+  failedBadge: {
+    backgroundColor: "#FFEBEE",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  failedBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#D32F2F",
+  },
   measurementButton: {
-    marginTop: 14,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: "#2e7d32",
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-
   measurementButtonText: {
     color: "#2e7d32",
     fontWeight: "bold",
+    fontSize: 13,
   },
-
-  // PHOTOS
-
   photoButton: {
-    marginTop: 10,
+    marginTop: 8,
     borderWidth: 1,
     borderColor: "#1976d2",
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-
   photoButtonText: {
     color: "#1976d2",
     fontWeight: "bold",
+    fontSize: 13,
   },
-
-  // IRRIGATION
-
   irrigationButton: {
-    marginTop: 10,
+    marginTop: 8,
     borderWidth: 1,
     borderColor: "#ef6c00",
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-
   irrigationButtonText: {
     color: "#ef6c00",
     fontWeight: "bold",
+    fontSize: 13,
   },
-
-  // TREATMENTS
-
   treatmentButton: {
-    marginTop: 10,
+    marginTop: 8,
     borderWidth: 1,
     borderColor: "#6a1b9a",
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-
   treatmentButtonText: {
     color: "#6a1b9a",
     fontWeight: "bold",
+    fontSize: 13,
   },
-
-  // FORM
-
+  diseasePestButton: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#c62828",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  diseasePestButtonText: {
+    color: "#c62828",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  harvestButton: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#0284C7",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  harvestButtonText: {
+    color: "#0284C7",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
   label: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
-    marginBottom: 8,
+    color: "#374151",
+    marginTop: 12,
+    marginBottom: 6,
   },
-
   stageContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 14,
   },
-
   stageOption: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#D1D5DB",
     borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#FFFFFF",
   },
-
   selectedStage: {
     backgroundColor: "#2e7d32",
     borderColor: "#2e7d32",
   },
-
   stageOptionText: {
-    fontSize: 14,
+    fontSize: 13,
+    color: "#374151",
   },
-
   selectedStageText: {
     color: "#fff",
     fontWeight: "bold",
   },
-
   input: {
     backgroundColor: "#ffffff",
-    borderWidth: 1.2,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 18,
-    ...Platform.select({
-      web: {
-        outlineStyle: "none",
-        outlineWidth: 0,
-        boxShadow: "none",
-      },
-    }),
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#0F172A",
+    marginBottom: 10,
   },
-
   notesInput: {
-    minHeight: 100,
+    minHeight: 80,
     textAlignVertical: "top",
   },
-
   button: {
     backgroundColor: "#2e7d32",
-    padding: 16,
-    borderRadius: 10,
+    padding: 14,
+    borderRadius: 8,
     alignItems: "center",
-    marginTop: 5,
+    marginTop: 10,
   },
-
   buttonDisabled: {
     opacity: 0.7,
   },
-
   buttonText: {
     color: "#fff",
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "bold",
   },
-  diseasePestButton: {
-  marginTop: 10,
-  borderWidth: 1,
-  borderColor: "#c62828",
-  padding: 12,
-  borderRadius: 8,
-  alignItems: "center",
-},
-
-diseasePestButtonText: {
-  color: "#c62828",
-  fontWeight: "bold",
-},
 });

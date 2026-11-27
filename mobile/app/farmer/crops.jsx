@@ -29,6 +29,11 @@ import FilterButton from "../../components/ui/FilterButton";
 import FilterModal from "../../components/ui/FilterModal";
 import FilterSection from "../../components/ui/FilterSection";
 import EmptySearchState from "../../components/ui/EmptySearchState";
+import SyncStatus from "../../components/SyncStatus";
+import useNetworkStatus from "../../hooks/useNetworkStatus";
+import { cacheCrops, getCachedCrops } from "../../services/offlineStorage";
+import { getCurrentUserId } from "../../services/auth";
+import { subscribeSyncEvents } from "../../services/syncService";
 
 export default function FarmerCropsScreen() {
   const router = useRouter();
@@ -38,6 +43,11 @@ export default function FarmerCropsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [userId, setUserId] = useState(null);
+
+  const { isOnline } = useNetworkStatus(() => {
+    loadCrops();
+  });
 
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,20 +96,46 @@ export default function FarmerCropsScreen() {
     try {
       setLoading(true);
       setError(null);
-      const res = await API.get("/crops");
-      setCrops(res.data?.crops || []);
+      const uid = await getCurrentUserId();
+      setUserId(uid);
+
+      if (isOnline) {
+        try {
+          const res = await API.get("/crops");
+          const fetched = res.data?.crops || [];
+          setCrops(fetched);
+          await cacheCrops(uid, fetched);
+          return;
+        } catch (apiErr) {
+          console.log("[crops] API fetch failed, loading SQLite cache:", apiErr.message);
+        }
+      }
+
+      // Offline or fallback: load from SQLite
+      const cached = await getCachedCrops(uid);
+      setCrops(cached);
     } catch (err) {
-      console.log("FETCH CROPS ERROR:", err.response?.data || err.message);
-      setError(
-        err.response?.data?.message || "Failed to load crops. Please try again."
-      );
+      console.log("FETCH CROPS ERROR:", err.message);
+      const cached = await getCachedCrops(userId);
+      if (cached.length > 0) {
+        setCrops(cached);
+      } else {
+        setError(err.message || "Failed to load crops.");
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isOnline, userId]);
 
   useEffect(() => {
     loadCrops();
+
+    const unsubscribe = subscribeSyncEvents((event) => {
+      if (event.type === "ITEM_SYNCED" || event.type === "SYNC_COMPLETE") {
+        loadCrops();
+      }
+    });
+    return () => unsubscribe();
   }, [loadCrops]);
 
   const onRefresh = async () => {
@@ -176,7 +212,19 @@ export default function FarmerCropsScreen() {
       >
         <View style={styles.cardHeader}>
           <View style={styles.cardTitleWrap}>
-            <Text style={styles.cropName}>{item.crop_name || "Unnamed Crop"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={styles.cropName}>{item.crop_name || "Unnamed Crop"}</Text>
+              {item.sync_status === "pending" && (
+                <View style={{ backgroundColor: "#FFF3E0", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 6 }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#E65100" }}>Pending Sync</Text>
+                </View>
+              )}
+              {item.sync_status === "failed" && (
+                <View style={{ backgroundColor: "#FFEBEE", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 6 }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#D32F2F" }}>Failed</Text>
+                </View>
+              )}
+            </View>
             <Ionicons name="chevron-forward" size={16} color={COLORS.borderDark} />
           </View>
         </View>
@@ -236,10 +284,14 @@ export default function FarmerCropsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add new crop"
           >
-            <Ionicons name="add" size={20} color={COLORS.primary} />
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.addHeaderBtnText}>Add Crop</Text>
           </TouchableOpacity>
         }
       />
+
+      {/* Network / Offline Banner */}
+      <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
 
       {/* Summary */}
       <View style={styles.summaryRow}>
@@ -391,14 +443,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   addHeaderBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: COLORS.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: COLORS.primary || "#1B5E20",
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 4,
+    ...SHADOWS.subtle,
+  },
+  addHeaderBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   summaryRow: {
     flexDirection: "row",

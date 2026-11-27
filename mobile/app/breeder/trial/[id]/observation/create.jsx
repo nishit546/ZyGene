@@ -16,6 +16,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../../../../services/api";
+import AppDatePicker from "../../../../../components/ui/AppDatePicker";
 
 export default function CreateTrialObservation() {
   const router = useRouter();
@@ -220,27 +221,14 @@ export default function CreateTrialObservation() {
             </View>
 
             {/* 1. Observation Date (Required) */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>
-                Observation Date <Text style={styles.required}>*</Text>
-              </Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={18}
-                  color="#546E7A"
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#90A4AE"
-                  value={observationDate}
-                  onChangeText={setObservationDate}
-                  editable={!submitting}
-                />
-              </View>
-            </View>
+            <AppDatePicker
+              label="Observation Date"
+              placeholder="Select observation date"
+              value={observationDate}
+              onChange={setObservationDate}
+              isRequired={true}
+              maxDate={new Date()}
+            />
 
             {/* 2. Measurement Type (Required) */}
             <View style={styles.inputGroup}>
@@ -606,7 +594,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
   },
   multilineWrapper: {
     paddingVertical: 10,

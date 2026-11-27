@@ -1,4 +1,5 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
@@ -60,6 +61,7 @@ app.use("/api/irrigation", irrigationRoutes);
 app.use("/api/treatments", treatmentRoutes);
 
 app.use("/api/disease-pests", diseasePestRoutes);
+app.use("/api/disease-pest", diseasePestRoutes);
 
 app.use("/api/harvest", harvestRoutes);
 
@@ -93,8 +95,12 @@ app.use((err, req, res, next) => {
 
 // Server
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 4000;
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on ${PORT}`);
+    });
+}
+
+module.exports = app;

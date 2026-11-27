@@ -81,7 +81,9 @@ export default function AppInput({
             multiline && styles.inputMultiline,
           ]}
           placeholder={placeholder}
-          placeholderTextColor={COLORS.textMuted}
+          placeholderTextColor="#64748B"
+          cursorColor="#1B5E20"
+          selectionColor="rgba(27, 94, 32, 0.25)"
           value={value}
           onChangeText={onChangeText}
           onFocus={handleFocus}
@@ -115,7 +117,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13.5,
     fontWeight: "600",
-    color: COLORS.text,
+    color: "#0F172A",
     letterSpacing: 0.15,
   },
   requiredAsterisk: {
@@ -124,11 +126,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   inputBox: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
     borderRadius: RADIUS.md || 10,
     paddingHorizontal: SPACING.md,
-    height: 52,
+    minHeight: 50,
     justifyContent: "center",
     ...Platform.select({
       web: {
@@ -145,7 +147,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     ...Platform.select({
       web: {
-        boxShadow: "0 0 0 3.5px rgba(46, 125, 50, 0.14)",
+        boxShadow: "0 0 0 3.5px rgba(27, 94, 32, 0.14)",
       },
     }),
   },
@@ -160,17 +162,18 @@ const styles = StyleSheet.create({
     }),
   },
   inputBoxMultiline: {
-    height: undefined,
+    minHeight: 90,
     paddingVertical: SPACING.sm + 4,
     justifyContent: "flex-start",
   },
   input: {
     fontSize: 15,
-    color: COLORS.text,
-    padding: 0,
+    color: "#0F172A",
+    fontWeight: "500",
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
+    paddingHorizontal: 0,
     margin: 0,
     width: "100%",
-    height: "100%",
     borderWidth: 0,
     ...Platform.select({
       web: {
@@ -183,11 +186,11 @@ const styles = StyleSheet.create({
   },
   inputMultiline: {
     textAlignVertical: "top",
-    height: undefined,
+    minHeight: 70,
   },
   helperText: {
     fontSize: 12,
-    color: COLORS.textMuted,
+    color: "#64748B",
     marginTop: 5,
     lineHeight: 16,
   },

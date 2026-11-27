@@ -16,6 +16,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../../../../services/api";
+import { copyToClipboard } from "../../../../../services/shareService";
 
 export default function EditTrialObservation() {
   const router = useRouter();
@@ -334,12 +335,27 @@ export default function EditTrialObservation() {
               <View style={styles.contextIconBox}>
                 <Ionicons name="flask" size={16} color="#1B5E20" />
               </View>
-              <View style={styles.contextTextBox}>
+              <View style={[styles.contextTextBox, { flex: 1 }]}>
                 <Text style={styles.contextLabel}>TRIAL & OBSERVATION</Text>
                 <Text style={styles.contextValue}>
                   Trial #{id} • Observation #{observationId}
                 </Text>
               </View>
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  backgroundColor: "#E8F5E9",
+                  paddingHorizontal: 8,
+                  paddingVertical: 5,
+                  borderRadius: 6,
+                }}
+                onPress={() => copyToClipboard(observationId, "Observation ID")}
+              >
+                <Ionicons name="copy-outline" size={12} color="#2E7D32" />
+                <Text style={{ fontSize: 11, fontWeight: "600", color: "#2E7D32" }}>Copy ID</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -770,7 +786,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
   },
   multilineWrapper: {
     paddingVertical: 10,

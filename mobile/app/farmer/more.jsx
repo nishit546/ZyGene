@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from "../../constants/theme";
 import FarmerHeader from "../../components/ui/FarmerHeader";
 import FarmerBottomTabs from "../../components/FarmerBottomTabs";
+import { confirmLogout } from "../../services/auth";
 
 export default function FarmerMoreScreen() {
   const router = useRouter();
@@ -35,22 +36,7 @@ export default function FarmerMoreScreen() {
   }, []);
 
   const handleLogout = () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await AsyncStorage.multiRemove(["token", "user"]);
-          } catch (err) {
-            console.log("Logout error:", err);
-          } finally {
-            router.replace("/login");
-          }
-        },
-      },
-    ]);
+    confirmLogout();
   };
 
   const farmerName = user?.farmer_name || user?.name || user?.username || "Farmer";
@@ -114,10 +100,30 @@ export default function FarmerMoreScreen() {
 
         {/* FARM MANAGEMENT */}
         {renderSection("FARM MANAGEMENT", [
+          { id: "farm-map", title: "Farm Map", subtitle: "GPS field markers & boundaries", icon: "map-outline", route: "/farmer/farm-map" },
+          { id: "reminders", title: "Farm Reminders", subtitle: "Irrigation, treatments & harvest alerts", icon: "notifications-outline", route: "/farmer/reminders" },
           { id: "tasks", title: "Farm Tasks", subtitle: "Scheduled activities & to-dos", icon: "checkbox-outline", route: "/farmer/tasks" },
           { id: "field-work", title: "Field Work", subtitle: "Direct field activity entry", icon: "document-text-outline", route: "/farmer/field-work" },
-          { id: "fields", title: "Fields", icon: "map-outline", route: "/farmer/fields" },
+          { id: "fields", title: "Fields", icon: "grid-outline", route: "/farmer/fields" },
           { id: "crops", title: "Crops", icon: "leaf-outline", route: "/farmer/crops" },
+        ])}
+
+        {/* DATA & OFFLINE */}
+        {renderSection("DATA & OFFLINE", [
+          {
+            id: "files",
+            title: "My Exported Files",
+            subtitle: "Saved PDF & CSV reports",
+            icon: "document-outline",
+            route: "/farmer/files",
+          },
+          {
+            id: "sync",
+            title: "Synchronization",
+            subtitle: "Manage offline data & sync status",
+            icon: "sync-outline",
+            route: "/farmer/sync",
+          },
         ])}
 
         {/* ACCOUNT */}

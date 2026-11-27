@@ -17,6 +17,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS, SPACING, RADIUS } from "../../constants/theme";
 import FarmerHeader from "../../components/ui/FarmerHeader";
+import AppDatePicker from "../../components/ui/AppDatePicker";
 import API from "../../services/api";
 
 const CATEGORIES = [
@@ -224,13 +225,12 @@ export default function CreateTaskScreen() {
 
               {/* DUE DATE */}
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Due Date (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. 2026-10-30"
-                  placeholderTextColor={COLORS.textMuted}
+                <AppDatePicker
+                  label="Due Date"
+                  placeholder="Select task due date"
                   value={dueDate}
-                  onChangeText={setDueDate}
+                  onChange={setDueDate}
+                  minDate={new Date()}
                 />
                 <View style={styles.datePresetsRow}>
                   <TouchableOpacity
@@ -412,14 +412,15 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   textInput: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
     borderRadius: RADIUS.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
-    color: COLORS.text,
+    fontSize: 14.5,
+    fontWeight: "500",
+    color: "#0F172A",
   },
   textArea: {
     minHeight: 70,

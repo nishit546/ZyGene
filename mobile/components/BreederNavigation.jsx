@@ -5,9 +5,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 
 /**
  * Reusable navigation bar for the ZyGene Breeder module.
@@ -67,6 +69,11 @@ export default function BreederNavigation({ activeTab = "dashboard" }) {
 
   const handleNavigate = (item) => {
     if (item.id === activeTab) return;
+    if (Platform.OS !== "web") {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+    }
     router.replace(item.route);
   };
 

@@ -17,6 +17,8 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../../services/api";
+import { copyToClipboard, shareText } from "../../../services/shareService";
+import ContactPickerModal from "../../../components/ContactPickerModal";
 
 export default function BreedingProgramDetails() {
   const router = useRouter();
@@ -41,6 +43,43 @@ export default function BreedingProgramDetails() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [contactModalVisible, setContactModalVisible] = useState(false);
+
+  const buildProgramSummary = () => {
+    return [
+      `🧬 *ZyGene Breeding Program: ${program?.program_name || "Program"}*`,
+      `• Crop: ${program?.crop_name || "N/A"}`,
+      `• Status: ${program?.status || "Planned"}`,
+      program?.objective ? `• Objective: ${program.objective}` : null,
+      program?.start_date ? `• Start Date: ${program.start_date}` : null,
+      `• Total Crosses: ${crosses.length}`,
+      `• Total Trials: ${trials.length}`,
+      `• Program ID: ${id}`,
+      `Shared from ZyGene AgriTech Platform.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
+
+  const handleShareProgram = async () => {
+    const summary = buildProgramSummary();
+    await shareText({
+      title: `Breeding Program: ${program?.program_name || "Program"}`,
+      message: summary,
+    });
+  };
+
+  const handleCopyProgramCode = () => {
+    copyToClipboard(id, "Program Code");
+  };
+
+  const handleContactSelect = async (contact) => {
+    const summary = buildProgramSummary();
+    await shareText({
+      title: `Program Summary for ${contact.name}`,
+      message: `Hi ${contact.name},\n\nHere is the breeding program summary:\n${summary}`,
+    });
+  };
 
   // Form states for editing
   const [editProgramName, setEditProgramName] = useState("");
@@ -1358,8 +1397,74 @@ export default function BreedingProgramDetails() {
 
           {/* ACTIONS: EDIT & DELETE */}
           <View style={styles.sectionContainer}>
-            <Text style={styles.sectionHeading}>Program Actions</Text>
+            <Text style={styles.sectionHeading}>Program Actions & Collaboration</Text>
             <View style={styles.actionsCard}>
+              {/* Native Collaboration Actions: Copy, Share, Contacts */}
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#F1F8E9",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={handleCopyProgramCode}
+                >
+                  <Ionicons name="copy-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Copy Code
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#F1F8E9",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={handleShareProgram}
+                >
+                  <Ionicons name="share-social-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Share
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#F1F8E9",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={() => setContactModalVisible(true)}
+                >
+                  <Ionicons name="people-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Contacts
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               {/* Edit Program Button */}
               <TouchableOpacity
                 style={styles.editProgramButton}
@@ -1403,6 +1508,13 @@ export default function BreedingProgramDetails() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ContactPickerModal
+        visible={contactModalVisible}
+        onClose={() => setContactModalVisible(false)}
+        onSelectContact={handleContactSelect}
+        title={`Share ${program?.program_name || "Program"} Summary`}
+      />
     </SafeAreaView>
   );
 }
@@ -2083,7 +2195,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
   },
   multilineWrapper: {
     paddingVertical: 10,

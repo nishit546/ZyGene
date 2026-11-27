@@ -17,6 +17,8 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../../services/api";
+import { copyToClipboard, shareText } from "../../../services/shareService";
+import ContactPickerModal from "../../../components/ContactPickerModal";
 
 export default function BreedingTrialDetails() {
   const router = useRouter();
@@ -38,6 +40,43 @@ export default function BreedingTrialDetails() {
   const [saving, setSaving] = useState(false);
   const [deletingTrial, setDeletingTrial] = useState(false);
   const [deletingObsId, setDeletingObsId] = useState(null);
+  const [contactModalVisible, setContactModalVisible] = useState(false);
+
+  const buildTrialSummary = () => {
+    return [
+      `🧪 *ZyGene Breeding Trial: ${trial?.trial_name || "Trial"}*`,
+      `• Program: ${trial?.program_name || `Program #${trial?.program_id}`}`,
+      trial?.cross_code ? `• Cross Code: ${trial.cross_code}` : null,
+      `• Location: ${trial?.location || "Not specified"}`,
+      `• Season: ${trial?.season || "Not specified"}`,
+      `• Status: ${trial?.status || "Planned"}`,
+      `• Observations: ${observations.length}`,
+      `• Trial ID: ${id}`,
+      `Shared from ZyGene AgriTech Platform.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
+
+  const handleShareTrial = async () => {
+    const summary = buildTrialSummary();
+    await shareText({
+      title: `Breeding Trial: ${trial?.trial_name || "Trial"}`,
+      message: summary,
+    });
+  };
+
+  const handleCopyTrialId = () => {
+    copyToClipboard(id, "Trial ID");
+  };
+
+  const handleContactSelect = async (contact) => {
+    const summary = buildTrialSummary();
+    await shareText({
+      title: `Trial Summary for ${contact.name}`,
+      message: `Hi ${contact.name},\n\nHere is the breeding trial report:\n${summary}`,
+    });
+  };
 
   // Edit form states
   const [editTrialName, setEditTrialName] = useState("");
@@ -826,6 +865,72 @@ export default function BreedingTrialDetails() {
             </View>
           ) : (
             <>
+              {/* Native Actions: Copy, Share, Contacts */}
+              <View style={{ flexDirection: "row", gap: 8, marginHorizontal: 20, marginTop: 14, marginBottom: 4 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#FFFFFF",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={handleCopyTrialId}
+                >
+                  <Ionicons name="copy-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Copy ID
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#FFFFFF",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={handleShareTrial}
+                >
+                  <Ionicons name="share-social-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Share
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#FFFFFF",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={() => setContactModalVisible(true)}
+                >
+                  <Ionicons name="people-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Contacts
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               {/* 1. BREEDING PROGRAM SECTION */}
               <View style={styles.card}>
                 <View style={styles.cardHeaderWithAction}>
@@ -1452,6 +1557,13 @@ export default function BreedingTrialDetails() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ContactPickerModal
+        visible={contactModalVisible}
+        onClose={() => setContactModalVisible(false)}
+        onSelectContact={handleContactSelect}
+        title={`Share ${trial?.trial_name || "Trial"} Report`}
+      />
     </SafeAreaView>
   );
 }
@@ -2164,7 +2276,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
   },
   multilineWrapper: {
     paddingVertical: 10,

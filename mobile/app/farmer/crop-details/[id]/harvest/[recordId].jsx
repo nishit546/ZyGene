@@ -27,6 +27,20 @@ import StatusBadge from "../../../../../components/ui/StatusBadge";
 import AppInput from "../../../../../components/ui/AppInput";
 import AppButton from "../../../../../components/ui/AppButton";
 import RecordDetailModal from "../../../../../components/ui/RecordDetailModal";
+import SyncStatus from "../../../../../components/SyncStatus";
+import useNetworkStatus from "../../../../../hooks/useNetworkStatus";
+import {
+  cacheActivities,
+  getCachedActivities,
+  generateLocalId,
+} from "../../../../../services/offlineStorage";
+import {
+  enqueueOperation,
+  subscribeSyncEvents,
+} from "../../../../../services/syncService";
+import { getCurrentUserId } from "../../../../../services/auth";
+import { copyToClipboard, shareText, shareFile } from "../../../../../services/shareService";
+import { exportHarvestCSV } from "../../../../../services/fileService";
 
 const QUALITY_GRADES = ["Grade A", "Grade B", "Grade C", "Commercial", "Export"];
 const YIELD_UNITS = ["kg", "quintals", "tons", "bags", "lbs"];
@@ -40,9 +54,70 @@ export default function Harvest() {
   const [filterVisible, setFilterVisible] = useState(false);
   const [sortBy, setSortBy] = useState("Newest first");
   const [tempSortBy, setTempSortBy] = useState("Newest first");
-const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportCSV = async () => {
+    if (harvestRecords.length === 0) {
+      Alert.alert("Notice", "No harvest records available to export.");
+      return;
+    }
+    try {
+      setExporting(true);
+      const res = await exportHarvestCSV(harvestRecords, `Crop_${id}_Harvest`);
+      if (res.success && res.uri) {
+        Alert.alert(
+          "CSV Exported",
+          `Saved as ${res.filename}.\nWould you like to share it now?`,
+          [
+            { text: "View in My Files", onPress: () => router.push("/farmer/files") },
+            { text: "Share Now", onPress: () => shareFile(res.uri, res.filename) },
+          ]
+        );
+      } else if (res.success) {
+        Alert.alert("CSV Exported", "Spreadsheet downloaded successfully.");
+      } else {
+        Alert.alert("Export Error", res.error || "Failed to export CSV.");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Could not export CSV file.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleCopyRecordSummary = (item) => {
+    const text = `🌾 Harvest Batch: ${item.yield_amount} ${item.yield_unit || "kg"} · Grade: ${item.quality_grade || "Standard"} · Date: ${item.harvest_date || "N/A"}`;
+    copyToClipboard(text, "Harvest Summary");
+  };
+
+  const handleShareRecord = async (item) => {
+    const text = [
+      `🌾 *ZyGene Harvest Batch Summary*`,
+      `• Crop ID: ${id}`,
+      `• Total Yield: ${item.yield_amount} ${item.yield_unit || "kg"}`,
+      `• Quality Grade: ${item.quality_grade || "Standard"}`,
+      `• Harvest Date: ${item.harvest_date || "N/A"}`,
+      item.area_harvested ? `• Area Harvested: ${item.area_harvested} ${item.area_unit || "acres"}` : null,
+      item.yield_per_area ? `• Yield/Area: ${item.yield_per_area} ${item.yield_unit}/${item.area_unit || "acre"}` : null,
+      item.notes ? `• Notes: ${item.notes}` : null,
+      `Shared from ZyGene AgriTech Platform.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await shareText({
+      title: "Harvest Summary",
+      message: text,
+    });
+  };
+
+  const { isOnline } = useNetworkStatus(() => {
+    loadHarvest();
+  });
 
   // Form states
   const [harvestDate, setHarvestDate] = useState(
@@ -62,21 +137,42 @@ const [loading, setLoading] = useState(true);
     if (!recordId) return;
     try {
       setLoading(true);
-      const response = await API.get(`/harvest/${recordId}`);
-      setHarvestRecords(response.data?.harvest || []);
+      const uid = await getCurrentUserId();
+      setUserId(uid);
+
+      if (isOnline && !String(recordId).startsWith("loc_")) {
+        try {
+          const response = await API.get(`/harvest/${recordId}`);
+          const fetched = response.data?.harvest || [];
+          setHarvestRecords(fetched);
+          await cacheActivities(uid, recordId, "harvest", fetched);
+          return;
+        } catch (apiErr) {
+          console.log("[harvest] API fetch failed, loading SQLite cache:", apiErr.message);
+        }
+      }
+
+      // Offline or fallback: load from SQLite
+      const cached = await getCachedActivities(recordId, "harvest");
+      setHarvestRecords(cached);
     } catch (error) {
-      console.log("HARVEST ERROR:", error.response?.data || error.message);
-      Alert.alert(
-        "Error",
-        error.response?.data?.message || "Failed to load harvest records."
-      );
+      console.log("HARVEST ERROR:", error.message);
+      const cached = await getCachedActivities(recordId, "harvest");
+      setHarvestRecords(cached);
     } finally {
       setLoading(false);
     }
-  }, [recordId]);
+  }, [recordId, isOnline]);
 
   useEffect(() => {
     loadHarvest();
+
+    const unsubscribe = subscribeSyncEvents((event) => {
+      if (event.type === "ITEM_SYNCED" || event.type === "SYNC_COMPLETE") {
+        loadHarvest();
+      }
+    });
+    return () => unsubscribe();
   }, [loadHarvest]);
 
   const handleYieldOrAreaChange = (newTotal, newArea) => {
@@ -111,41 +207,107 @@ const [loading, setLoading] = useState(true);
 
     if (creating) return;
 
+    const payload = {
+      lifecycle_record_id: Number(recordId) || recordId,
+      harvest_date: harvestDate.trim(),
+      total_yield: totalYield.trim() ? Number(totalYield.trim()) : null,
+      yield_unit: yieldUnit.trim() || null,
+      area_harvested: areaHarvested.trim() ? Number(areaHarvested.trim()) : null,
+      area_unit: areaUnit.trim() || null,
+      yield_per_area: yieldPerArea.trim() ? Number(yieldPerArea.trim()) : null,
+      number_of_plants: numberOfPlants.trim()
+        ? Number(numberOfPlants.trim())
+        : null,
+      average_weight_per_plant: averageWeight.trim()
+        ? Number(averageWeight.trim())
+        : null,
+      quality_grade: qualityGrade.trim() || null,
+      notes: notes.trim() || null,
+    };
+
     try {
       setCreating(true);
+      const uid = userId || (await getCurrentUserId());
 
-      const payload = {
-        lifecycle_record_id: Number(recordId),
-        harvest_date: harvestDate.trim(),
-        total_yield: totalYield.trim() ? Number(totalYield.trim()) : null,
-        yield_unit: yieldUnit.trim() || null,
-        area_harvested: areaHarvested.trim() ? Number(areaHarvested.trim()) : null,
-        area_unit: areaUnit.trim() || null,
-        yield_per_area: yieldPerArea.trim() ? Number(yieldPerArea.trim()) : null,
-        number_of_plants: numberOfPlants.trim()
-          ? Number(numberOfPlants.trim())
-          : null,
-        average_weight_per_plant: averageWeight.trim()
-          ? Number(averageWeight.trim())
-          : null,
-        quality_grade: qualityGrade.trim() || null,
-        notes: notes.trim() || null,
-      };
+      // If offline or parent record was created offline: save locally and queue
+      if (!isOnline || String(recordId).startsWith("loc_")) {
+        const localId = generateLocalId("harv");
+        await enqueueOperation({
+          userId: uid,
+          recordType: "harvest",
+          operationType: "create",
+          localRecordId: localId,
+          parentLocalId: String(recordId).startsWith("loc_") ? String(recordId) : null,
+          parentServerId: !String(recordId).startsWith("loc_") ? Number(recordId) : null,
+          endpoint: "/harvest",
+          httpMethod: "POST",
+          payload,
+        });
 
-      await API.post("/harvest", payload);
+        Alert.alert(
+          "Saved on this device",
+          "Harvest record saved locally. It will sync automatically when you are back online."
+        );
 
-      Alert.alert("Recorded", "Harvest production data saved successfully.");
-      setTotalYield("");
-      setAreaHarvested("");
-      setYieldPerArea("");
-      setNotes("");
-      loadHarvest();
-    } catch (error) {
-      console.log("CREATE HARVEST ERROR:", error.response?.data || error.message);
-      Alert.alert(
-        "Error",
-        error.response?.data?.message || "Failed to save harvest record."
-      );
+        setTotalYield("");
+        setAreaHarvested("");
+        setYieldPerArea("");
+        setNotes("");
+
+        const cached = await getCachedActivities(recordId, "harvest");
+        setHarvestRecords(cached);
+        return;
+      }
+
+      // Online: send request
+      try {
+        const response = await API.post("/harvest", payload);
+        Alert.alert("Recorded", "Harvest production data saved successfully.");
+
+        setTotalYield("");
+        setAreaHarvested("");
+        setYieldPerArea("");
+        setNotes("");
+
+        if (response.data?.harvest) {
+          await cacheActivities(uid, recordId, "harvest", [response.data.harvest]);
+        }
+        await loadHarvest();
+      } catch (reqError) {
+        if (!reqError.response) {
+          // Connection lost: save offline
+          const localId = generateLocalId("harv");
+          await enqueueOperation({
+            userId: uid,
+            recordType: "harvest",
+            operationType: "create",
+            localRecordId: localId,
+            parentLocalId: String(recordId).startsWith("loc_") ? String(recordId) : null,
+            parentServerId: !String(recordId).startsWith("loc_") ? Number(recordId) : null,
+            endpoint: "/harvest",
+            httpMethod: "POST",
+            payload,
+          });
+
+          Alert.alert(
+            "Saved on this device",
+            "Connection interrupted. Saved locally and queued for automatic sync."
+          );
+
+          setTotalYield("");
+          setAreaHarvested("");
+          setYieldPerArea("");
+          setNotes("");
+
+          const cached = await getCachedActivities(recordId, "harvest");
+          setHarvestRecords(cached);
+        } else {
+          Alert.alert(
+            "Error",
+            reqError.response?.data?.message || "Failed to save harvest record."
+          );
+        }
+      }
     } finally {
       setCreating(false);
     }
@@ -210,8 +372,11 @@ return (
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Offline / Sync Status Banner */}
+          <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
+
           {/* HARVEST RESULT HIGHLIGHT STRIP */}
-          <View style={styles.resultCard}>
+          <View style={[styles.resultCard, { marginTop: 12 }]}>
             <View style={styles.resultHeader}>
               <Text style={styles.resultHeaderTitle}>HARVEST RESULT</Text>
               {latestHarvest?.quality_grade ? (
@@ -265,7 +430,29 @@ return (
           </View>
 
           {/* HARVEST RECORDS LIST */}
-          <Text style={styles.sectionHeader}>HARVEST LOG</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm }}>
+            <Text style={[styles.sectionHeader, { marginBottom: 0 }]}>HARVEST LOG</Text>
+            {harvestRecords.length > 0 && (
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  backgroundColor: COLORS.primaryLight,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: RADIUS.sm,
+                }}
+                onPress={handleExportCSV}
+                disabled={exporting}
+              >
+                <Ionicons name="document-text-outline" size={13} color={COLORS.primary} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: COLORS.primary }}>
+                  {exporting ? "Exporting..." : "Export CSV"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {harvestRecords.length > 0 && (
           <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.md}}>
             <View style={{flex: 1, marginRight: SPACING.sm}}>
@@ -319,9 +506,21 @@ return (
                   >
                     <View style={styles.recordLeft}>
                       <View style={styles.titleRow}>
-                        <Text style={styles.recordTitle}>
-                          {item.quality_grade || "Harvest Batch"}
-                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Text style={styles.recordTitle}>
+                            {item.quality_grade || "Harvest Batch"}
+                          </Text>
+                          {item.sync_status === "pending" && (
+                            <View style={{ backgroundColor: "#FFF3E0", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 6 }}>
+                              <Text style={{ fontSize: 10, fontWeight: "700", color: "#E65100" }}>Pending Sync</Text>
+                            </View>
+                          )}
+                          {item.sync_status === "failed" && (
+                            <View style={{ backgroundColor: "#FFEBEE", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 6 }}>
+                              <Text style={{ fontSize: 10, fontWeight: "700", color: "#D32F2F" }}>Failed</Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.recordDate}>{dateStr}</Text>
                       </View>
 

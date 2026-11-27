@@ -1,15 +1,31 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const { Pool } = require("pg");
 
+const poolConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false,
+      },
+    }
+  : {
+      host: process.env.DB_HOST || "localhost",
+      user: process.env.DB_USER || "postgres",
+      password: String(process.env.DB_PASSWORD ?? ""),
+      database: process.env.DB_NAME || "zygene",
+      port: parseInt(process.env.DB_PORT || "5432", 10),
+      ssl:
+        process.env.DB_SSL === "true" || (process.env.DB_HOST && !process.env.DB_HOST.includes("localhost") && !process.env.DB_HOST.includes("127.0.0.1"))
+          ? { rejectUnauthorized: false }
+          : false,
+    };
+
 const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "postgres",
-  password: String(process.env.DB_PASSWORD ?? ""),
-  database: process.env.DB_NAME || "zygene",
-  port: parseInt(process.env.DB_PORT || "5432", 10),
+  ...poolConfig,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
 });
 
 // Verify connection on startup
@@ -17,7 +33,10 @@ pool.connect((err, client, release) => {
   if (err) {
     console.error("PostgreSQL connection error:", err.message);
   } else {
-    console.log("Connected to ZyGene Database (PostgreSQL active on port " + (process.env.DB_PORT || 5432) + ")");
+    const hostInfo = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.replace(/:[^:@]+@/, ":****@")
+      : `${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || 5432}`;
+    console.log("Connected to ZyGene Database (PostgreSQL active on " + hostInfo + ")");
     release();
   }
 });

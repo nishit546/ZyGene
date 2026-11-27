@@ -2,8 +2,17 @@ import "../global.css";
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { Stack } from "expo-router";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { cssInterop } from "nativewind";
+import * as SplashScreen from "expo-splash-screen";
 import { COLORS } from "../constants/theme";
+import BiometricGate from "../components/BiometricGate";
+
+// Keep native splash screen visible while app initializes resources
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// Enable NativeWind className on SafeAreaView
+cssInterop(SafeAreaView, { className: "style" });
 
 // Universal browser style injection for web to completely eradicate browser outline boxes
 if (Platform.OS === "web" && typeof document !== "undefined") {
@@ -65,9 +74,10 @@ const modalScreenOptions = {
   gestureEnabled: true,
 };
 
-// Sibling bottom tab / workspace navigation options (clean, instant switch without sliding)
+// Sibling bottom tab / workspace navigation options with smooth animated transitions
 const tabScreenOptions = {
-  animation: "none",
+  animation: "fade",
+  animationDuration: 220,
 };
 
 export default function RootLayout() {
@@ -95,12 +105,16 @@ export default function RootLayout() {
         document.head.appendChild(style);
       }
     }
+
+    // Hide splash screen smoothly once initialization is done
+    SplashScreen.hideAsync().catch(() => {});
   }, []);
 
   return (
     <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <Stack
-        screenOptions={{
+      <BiometricGate>
+        <Stack
+          screenOptions={{
           headerShown: false,
           // Prevent screen transition flickering or white flash by unifying background
           contentStyle: { backgroundColor: COLORS.background },
@@ -159,6 +173,10 @@ export default function RootLayout() {
         <Stack.Screen name="farmer/crop-details/[id]/harvest/[recordId]" />
         <Stack.Screen name="farmer/field-details/[id]" />
         <Stack.Screen name="farmer/field-work" />
+        <Stack.Screen name="farmer/farm-map" />
+        <Stack.Screen name="farmer/reminders" />
+        <Stack.Screen name="farmer/files" />
+        <Stack.Screen name="farmer/sync" />
         <Stack.Screen name="farmer/notifications" />
         <Stack.Screen name="farmer/settings" />
         <Stack.Screen name="farmer/about" />
@@ -184,6 +202,7 @@ export default function RootLayout() {
         <Stack.Screen name="breeder/trial/[id]" />
         <Stack.Screen name="breeder/trial/[id]/observation/[observationId]" />
       </Stack>
+      </BiometricGate>
     </SafeAreaProvider>
   );
 }

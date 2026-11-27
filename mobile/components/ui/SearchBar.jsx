@@ -22,7 +22,9 @@ export default function SearchBar({
       <TextInput
         style={styles.input}
         placeholder={placeholder}
-        placeholderTextColor={COLORS.textMuted}
+        placeholderTextColor="#64748B"
+        cursorColor="#1B5E20"
+        selectionColor="rgba(27, 94, 32, 0.25)"
         value={value}
         onChangeText={onChangeText}
         onFocus={() => setIsFocused(true)}
@@ -80,8 +82,10 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 14.5,
-    color: COLORS.text,
-    height: "100%",
+    fontWeight: "500",
+    color: "#0F172A",
+    paddingVertical: Platform.OS === "ios" ? 8 : 4,
+    paddingHorizontal: 0,
     ...Platform.select({
       web: {
         outlineStyle: "none",

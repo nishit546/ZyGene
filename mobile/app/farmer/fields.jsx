@@ -26,6 +26,16 @@ import FilterButton from "../../components/ui/FilterButton";
 import FilterModal from "../../components/ui/FilterModal";
 import FilterSection from "../../components/ui/FilterSection";
 import EmptySearchState from "../../components/ui/EmptySearchState";
+import SyncStatus from "../../components/SyncStatus";
+import useNetworkStatus from "../../hooks/useNetworkStatus";
+import {
+  cacheFields,
+  getCachedFields,
+  cacheCrops,
+  getCachedCrops,
+} from "../../services/offlineStorage";
+import { getCurrentUserId } from "../../services/auth";
+import { subscribeSyncEvents } from "../../services/syncService";
 
 export default function FarmerFieldsScreen() {
   const router = useRouter();
@@ -37,6 +47,11 @@ export default function FarmerFieldsScreen() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [userId, setUserId] = useState(null);
+
+  const { isOnline } = useNetworkStatus(() => {
+    loadData();
+  });
 
   const [filterVisible, setFilterVisible] = useState(false);
   const [sortBy, setSortBy] = useState("Recently added");
@@ -62,34 +77,67 @@ export default function FarmerFieldsScreen() {
     try {
       setLoading(true);
       setError(null);
+      const uid = await getCurrentUserId();
+      setUserId(uid);
 
-      const [fieldsRes, cropsRes] = await Promise.allSettled([
-        API.get("/fields"),
-        API.get("/crops"),
-      ]);
+      if (isOnline) {
+        try {
+          const [fieldsRes, cropsRes] = await Promise.allSettled([
+            API.get("/fields"),
+            API.get("/crops"),
+          ]);
 
-      if (fieldsRes.status === "fulfilled") {
-        setFields(fieldsRes.value.data?.fields || []);
-      } else {
-        throw new Error(
-          fieldsRes.reason?.response?.data?.message || "Failed to load fields."
-        );
+          let fetchedFields = [];
+          if (fieldsRes.status === "fulfilled") {
+            fetchedFields = fieldsRes.value.data?.fields || [];
+            setFields(fetchedFields);
+            await cacheFields(uid, fetchedFields);
+          }
+
+          if (cropsRes.status === "fulfilled") {
+            const fetchedCrops = cropsRes.value.data?.crops || [];
+            setCrops(fetchedCrops);
+            await cacheCrops(uid, fetchedCrops);
+          }
+
+          if (fieldsRes.status === "fulfilled") {
+            return;
+          }
+        } catch (apiErr) {
+          console.log("[fields] API fetch error, loading SQLite cache:", apiErr.message);
+        }
       }
 
-      if (cropsRes.status === "fulfilled") {
-        setCrops(cropsRes.value.data?.crops || []);
-      }
+      // Offline or fallback: load from SQLite
+      const cachedFields = await getCachedFields(uid);
+      const cachedCrops = await getCachedCrops(uid);
+      setFields(cachedFields);
+      setCrops(cachedCrops);
     } catch (err) {
       console.log("FETCH FIELDS ERROR:", err.message);
-      setError(err.message || "Failed to load farm fields.");
+      const cachedFields = await getCachedFields(userId);
+      const cachedCrops = await getCachedCrops(userId);
+      if (cachedFields.length > 0) {
+        setFields(cachedFields);
+        setCrops(cachedCrops);
+      } else {
+        setError(err.message || "Failed to load farm fields.");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isOnline, userId]);
 
   useEffect(() => {
     loadData();
+
+    const unsubscribe = subscribeSyncEvents((event) => {
+      if (event.type === "ITEM_SYNCED" || event.type === "SYNC_COMPLETE") {
+        loadData();
+      }
+    });
+    return () => unsubscribe();
   }, [loadData]);
 
   const onRefresh = () => {
@@ -153,7 +201,19 @@ export default function FarmerFieldsScreen() {
       >
         <View style={styles.fieldCardHeader}>
           <View style={styles.fieldNameRow}>
-            <Text style={styles.fieldName}>{item.field_name || "Unnamed Field"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={styles.fieldName}>{item.field_name || "Unnamed Field"}</Text>
+              {item.sync_status === "pending" && (
+                <View style={{ backgroundColor: "#FFF3E0", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 6 }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#E65100" }}>Pending Sync</Text>
+                </View>
+              )}
+              {item.sync_status === "failed" && (
+                <View style={{ backgroundColor: "#FFEBEE", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 6 }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#D32F2F" }}>Failed</Text>
+                </View>
+              )}
+            </View>
             <Ionicons name="chevron-forward" size={16} color={COLORS.borderDark} />
           </View>
           <Text style={styles.locationText}>
@@ -222,10 +282,14 @@ export default function FarmerFieldsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add new field"
           >
-            <Ionicons name="add" size={20} color={COLORS.primary} />
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.addHeaderBtnText}>Add Field</Text>
           </TouchableOpacity>
         }
       />
+
+      {/* Network / Offline Banner */}
+      <SyncStatus status={isOnline ? "online" : "offline"} showBanner={true} />
 
       {/* Field Summary */}
       <View style={styles.summaryStrip}>
@@ -362,12 +426,19 @@ const styles = StyleSheet.create({
   loadingText: { ...TYPOGRAPHY.supporting, marginTop: SPACING.md },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: SPACING.lg },
   addHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.surfaceSubtle,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: COLORS.primary || "#1B5E20",
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 4,
+    ...SHADOWS.subtle,
+  },
+  addHeaderBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   summaryStrip: {
     flexDirection: "row",

@@ -23,9 +23,22 @@ import FarmerDrawer from "../../components/FarmerDrawer";
 import NotificationBadge from "../../components/farmer/NotificationBadge";
 import AttentionCard from "../../components/farmer/AttentionCard";
 import { fetchFarmerNotifications } from "../../utils/farmerNotifications";
+import useNetworkStatus from "../../hooks/useNetworkStatus";
+import {
+  cacheFields,
+  cacheCrops,
+  getCachedFields,
+  getCachedCrops,
+} from "../../services/offlineStorage";
+import {
+  getQueueStats,
+  processSyncQueue,
+  subscribeSyncEvents,
+} from "../../services/syncService";
 
 export default function FarmerDashboard() {
   const [farmerName, setFarmerName] = useState("Farmer");
+  const [userId, setUserId] = useState(null);
   const [fields, setFields] = useState([]);
   const [crops, setCrops] = useState([]);
   const [error, setError] = useState(null);
@@ -36,6 +49,15 @@ export default function FarmerDashboard() {
 
   const [notifications, setNotifications] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [syncStats, setSyncStats] = useState({ pending: 0, failed: 0, synced: 0 });
+
+  const { isOnline } = useNetworkStatus(async () => {
+    // When returning online, auto-sync and refresh
+    if (userId) {
+      await processSyncQueue(userId);
+      await loadDashboard();
+    }
+  });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -44,17 +66,65 @@ export default function FarmerDashboard() {
       setLoading(true);
       setError(null);
 
-      const [fieldsResponse, cropsResponse, notifs, tasksRes] = await Promise.all([
-        API.get("/fields"),
-        API.get("/crops"),
-        fetchFarmerNotifications(),
-        API.get("/tasks?status=pending").catch(() => ({ data: { tasks: [] } })),
-      ]);
+      let currentUid = userId;
+      if (!currentUid) {
+        const userStr = await AsyncStorage.getItem("user");
+        if (userStr) {
+          try {
+            const parsed = JSON.parse(userStr);
+            currentUid = parsed.id;
+            setUserId(parsed.id);
+          } catch {}
+        }
+      }
 
-      setFields(fieldsResponse.data?.fields || []);
-      setCrops(cropsResponse.data?.crops || []);
-      setNotifications(notifs || []);
-      setTasks(tasksRes.data?.tasks || []);
+      // Check sync queue stats
+      try {
+        const qStats = await getQueueStats(currentUid);
+        setSyncStats(qStats);
+      } catch (e) {
+        console.warn("Queue stats load error:", e);
+      }
+
+      if (isOnline) {
+        const [fieldsResponse, cropsResponse, notifs, tasksRes] = await Promise.all([
+          API.get("/fields").catch(() => null),
+          API.get("/crops").catch(() => null),
+          fetchFarmerNotifications().catch(() => []),
+          API.get("/tasks?status=pending").catch(() => ({ data: { tasks: [] } })),
+        ]);
+
+        let loadedFields = fieldsResponse?.data?.fields || [];
+        let loadedCrops = cropsResponse?.data?.crops || [];
+
+        if (loadedFields.length > 0) {
+          setFields(loadedFields);
+          await cacheFields(currentUid, loadedFields);
+        } else {
+          // Fall back to SQLite cache if API response empty or failed
+          loadedFields = await getCachedFields(currentUid);
+          setFields(loadedFields);
+        }
+
+        if (loadedCrops.length > 0) {
+          setCrops(loadedCrops);
+          await cacheCrops(currentUid, loadedCrops);
+        } else {
+          loadedCrops = await getCachedCrops(currentUid);
+          setCrops(loadedCrops);
+        }
+
+        setNotifications(notifs || []);
+        setTasks(tasksRes?.data?.tasks || []);
+      } else {
+        // Offline: Load from SQLite local storage
+        const cachedF = await getCachedFields(currentUid);
+        const cachedC = await getCachedCrops(currentUid);
+        setFields(cachedF);
+        setCrops(cachedC);
+        setNotifications([]);
+        setTasks([]);
+      }
 
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -63,14 +133,33 @@ export default function FarmerDashboard() {
       }).start();
     } catch (err) {
       console.log("DASHBOARD ERROR:", err.response?.data || err.message);
-      setError(
-        err.response?.data?.message ||
-          "Unable to load farm data. Please check your connection."
-      );
+      // Fallback to local SQLite on error
+      try {
+        const cachedF = await getCachedFields(userId);
+        const cachedC = await getCachedCrops(userId);
+        if (cachedF.length > 0 || cachedC.length > 0) {
+          setFields(cachedF);
+          setCrops(cachedC);
+        } else {
+          setError(
+            err.response?.data?.message ||
+              "Unable to load farm data. Please check your connection."
+          );
+        }
+      } catch {
+        setError("Unable to load farm data.");
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const unsubscribe = subscribeSyncEvents(() => {
+      getQueueStats(userId).then(setSyncStats).catch(() => {});
+    });
+    return () => unsubscribe();
+  }, [userId]);
 
   useEffect(() => {
     const checkAndLoad = async () => {
@@ -159,7 +248,7 @@ export default function FarmerDashboard() {
 
   if (loading && !refreshing) {
     return (
-      <SafeAreaView className="flex-1 bg-surface">
+      <SafeAreaView className="flex-1 bg-surface" style={{ flex: 1, backgroundColor: COLORS.surface }}>
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
         <View className="flex-1 items-center justify-center p-6 bg-farmBg">
           <ActivityIndicator size="small" color={COLORS.primary} />
@@ -174,7 +263,7 @@ export default function FarmerDashboard() {
 
   if (error && !refreshing && fields.length === 0 && crops.length === 0) {
     return (
-      <SafeAreaView className="flex-1 bg-surface">
+      <SafeAreaView className="flex-1 bg-surface" style={{ flex: 1, backgroundColor: COLORS.surface }}>
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
         <View className="flex-1 items-center justify-center p-6 bg-farmBg">
           <ErrorState
@@ -191,7 +280,7 @@ export default function FarmerDashboard() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <SafeAreaView className="flex-1 bg-surface">
+    <SafeAreaView className="flex-1 bg-surface" style={{ flex: 1, backgroundColor: COLORS.surface }}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.surface} />
 
       {/* Header */}
@@ -210,6 +299,7 @@ export default function FarmerDashboard() {
 
       <ScrollView
         className="flex-1 bg-farmBg"
+        style={{ flex: 1, backgroundColor: COLORS.background }}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 12,
@@ -229,12 +319,56 @@ export default function FarmerDashboard() {
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={{ opacity: fadeAnim }}>
+          {/* COMPACT SYNCHRONIZATION SUMMARY */}
+          <TouchableOpacity
+            style={{
+              backgroundColor: !isOnline ? "#FFF8E1" : syncStats.pending > 0 ? "#FFF3E0" : "#F0FDF4",
+              borderRadius: 10,
+              paddingVertical: 9,
+              paddingHorizontal: 12,
+              marginBottom: 14,
+              borderWidth: 1,
+              borderColor: !isOnline ? "#FFE082" : syncStats.pending > 0 ? "#FFCC80" : "#BBF7D0",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+            onPress={() => router.push("/farmer/sync")}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="View synchronization status"
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+              <Ionicons
+                name={!isOnline ? "cloud-offline-outline" : syncStats.pending > 0 ? "sync-outline" : "checkmark-circle-outline"}
+                size={18}
+                color={!isOnline ? "#E65100" : syncStats.pending > 0 ? "#E65100" : COLORS.primary || "#2E7D32"}
+                style={{ marginRight: 8 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: !isOnline ? "#B45309" : syncStats.pending > 0 ? "#B45309" : COLORS.primary || "#2E7D32" }}>
+                  {!isOnline ? "Offline" : syncStats.pending > 0 ? "Pending Sync" : "All data synchronized"}
+                </Text>
+                <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 1 }}>
+                  {!isOnline
+                    ? syncStats.pending > 0
+                      ? `${syncStats.pending} records waiting to sync`
+                      : "Changes will be saved on this device"
+                    : syncStats.pending > 0
+                    ? `${syncStats.pending} records waiting to sync`
+                    : "Tap to review sync status"}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+
           {/* QUICK STATS */}
           <View className="mb-2">
             <Text className="text-base font-bold text-textPrimary tracking-tight">Farm Overview</Text>
           </View>
 
-          <View className="flex-row gap-3 mb-4">
+          <View className="flex-row gap-3 mb-3">
             <View className="flex-1 bg-white p-3 rounded-xl border border-farmBorderLight items-center justify-center shadow-sm">
               <Text className="text-2xl font-extrabold text-textPrimary">
                 {String(stats.totalFields).padStart(2, "0")}
@@ -247,6 +381,99 @@ export default function FarmerDashboard() {
               </Text>
               <Text className="text-xs text-textMuted font-medium mt-0.5">Active Crops</Text>
             </View>
+          </View>
+
+          {/* PRIMARY QUICK CREATION HERO ACTIONS */}
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+            {/* + ADD FIELD BUTTON */}
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: "#FFFFFF",
+                borderRadius: 14,
+                borderWidth: 1.5,
+                borderColor: "#E2E8F0",
+                padding: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.06,
+                shadowRadius: 6,
+                elevation: 2,
+              }}
+              onPress={() => router.push("/farmer/create-field")}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="Add new field"
+            >
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: "#DCFCE7",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 10,
+                }}
+              >
+                <Ionicons name="map" size={19} color="#15803D" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: "#0F172A" }}>
+                  + Add Field
+                </Text>
+                <Text style={{ fontSize: 11, color: "#64748B", marginTop: 1 }} numberOfLines={1}>
+                  Plot & GPS
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* + ADD CROP BUTTON */}
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: "#FFFFFF",
+                borderRadius: 14,
+                borderWidth: 1.5,
+                borderColor: "#E2E8F0",
+                padding: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.06,
+                shadowRadius: 6,
+                elevation: 2,
+              }}
+              onPress={() => router.push("/farmer/create-crop")}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel="Add new crop"
+            >
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: "#E0F2FE",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: 10,
+                }}
+              >
+                <Ionicons name="leaf" size={19} color="#0284C7" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: "#0F172A" }}>
+                  + Add Crop
+                </Text>
+                <Text style={{ fontSize: 11, color: "#64748B", marginTop: 1 }} numberOfLines={1}>
+                  Sow & track stage
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
           {/* NEEDS ATTENTION */}
@@ -514,21 +741,45 @@ export default function FarmerDashboard() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    className="flex-row items-center p-3.5 border-b border-farmBorderLight"
-                    onPress={() => router.push("/farmer/create-crop")}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="add" size={20} color={COLORS.primary} style={{ marginRight: 12 }} />
-                    <Text className="text-sm font-medium text-textPrimary">Create Crop</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    className="flex-row items-center p-3.5 border-b border-farmBorderLight"
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      padding: 13,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#F1F5F9",
+                    }}
                     onPress={() => router.push("/farmer/create-field")}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="add" size={20} color={COLORS.primary} style={{ marginRight: 12 }} />
-                    <Text className="text-sm font-medium text-textPrimary">Create Field</Text>
+                    <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: "#DCFCE7", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                      <Ionicons name="map" size={17} color="#15803D" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "600", color: "#0F172A" }}>Register New Field</Text>
+                      <Text style={{ fontSize: 11.5, color: "#64748B" }}>Record field boundary and soil type</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      padding: 13,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#F1F5F9",
+                    }}
+                    onPress={() => router.push("/farmer/create-crop")}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: "#E0F2FE", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                      <Ionicons name="leaf" size={17} color="#0284C7" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "600", color: "#0F172A" }}>Plant / Add New Crop</Text>
+                      <Text style={{ fontSize: 11.5, color: "#64748B" }}>Assign crop variety and record sowing</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
                   </TouchableOpacity>
 
                   <TouchableOpacity

@@ -16,6 +16,7 @@ import {
 import { useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../services/api";
+import AppDatePicker from "../../components/ui/AppDatePicker";
 
 export default function CreateBreedingProgram() {
   const router = useRouter();
@@ -217,44 +218,23 @@ export default function CreateBreedingProgram() {
 
             {/* Dates: Start Date & Expected End Date */}
             <View style={styles.row}>
-              <View style={[styles.inputGroup, styles.halfColumn]}>
-                <Text style={styles.label}>Start Date</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="calendar-outline"
-                    size={18}
-                    color="#2E7D32"
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#9E9E9E"
-                    value={startDate}
-                    onChangeText={setStartDate}
-                    autoCapitalize="none"
-                  />
-                </View>
+              <View style={[styles.halfColumn]}>
+                <AppDatePicker
+                  label="Start Date"
+                  placeholder="Select start date"
+                  value={startDate}
+                  onChange={setStartDate}
+                />
               </View>
 
-              <View style={[styles.inputGroup, styles.halfColumn]}>
-                <Text style={styles.label}>Expected End Date</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="flag-outline"
-                    size={18}
-                    color="#2E7D32"
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#9E9E9E"
-                    value={expectedEndDate}
-                    onChangeText={setExpectedEndDate}
-                    autoCapitalize="none"
-                  />
-                </View>
+              <View style={[styles.halfColumn]}>
+                <AppDatePicker
+                  label="Expected End Date"
+                  placeholder="Select end date"
+                  value={expectedEndDate}
+                  onChange={setExpectedEndDate}
+                  minDate={startDate ? new Date(startDate) : undefined}
+                />
               </View>
             </View>
 
@@ -459,7 +439,8 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 48,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
     borderWidth: 0,
     ...Platform.select({
       web: {

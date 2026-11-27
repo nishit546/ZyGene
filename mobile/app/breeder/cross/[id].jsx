@@ -16,6 +16,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../../services/api";
+import { copyToClipboard, shareText } from "../../../services/shareService";
 
 export default function BreedingCrossDetails() {
   const router = useRouter();
@@ -29,6 +30,32 @@ export default function BreedingCrossDetails() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const handleCopyCross = () => {
+    const text = cross?.cross_code || `Cross #${id}`;
+    copyToClipboard(text, "Cross Code");
+  };
+
+  const handleShareCross = async () => {
+    const text = [
+      `🧬 *ZyGene Breeding Cross: ${cross?.cross_code || `Cross #${id}`}*`,
+      `• Female Parent (♀): ${cross?.parent1_name || "N/A"}`,
+      `• Male Parent (♂): ${cross?.parent2_name || "N/A"}`,
+      `• Status: ${cross?.success_status || "Planned"}`,
+      cross?.generation ? `• Generation: ${cross.generation}` : null,
+      cross?.cross_date ? `• Cross Date: ${cross.cross_date}` : null,
+      cross?.objective ? `• Objective: ${cross.objective}` : null,
+      `• Cross ID: ${id}`,
+      `Shared from ZyGene AgriTech Platform.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await shareText({
+      title: `Cross Summary: ${cross?.cross_code || "Cross"}`,
+      message: text,
+    });
+  };
 
   // Form states for editing
   const [editParent1, setEditParent1] = useState("");
@@ -687,7 +714,53 @@ export default function BreedingCrossDetails() {
             </View>
           ) : (
             /* VIEW DETAILS MODE: MAIN CARD */
-            <View style={styles.card}>
+            <>
+              {/* Native Actions: Copy, Share */}
+              <View style={{ flexDirection: "row", gap: 8, marginHorizontal: 20, marginTop: 14, marginBottom: -6 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#FFFFFF",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={handleCopyCross}
+                >
+                  <Ionicons name="copy-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Copy Code
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    backgroundColor: "#FFFFFF",
+                    borderWidth: 1,
+                    borderColor: "#C8E6C9",
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                  }}
+                  onPress={handleShareCross}
+                >
+                  <Ionicons name="share-social-outline" size={15} color="#2E7D32" />
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#2E7D32" }}>
+                    Share Cross
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.card}>
               {/* Top Row: Cross Code & Status Badge */}
               <View style={styles.cardTopRow}>
                 <View style={styles.codeContainer}>
@@ -864,6 +937,7 @@ export default function BreedingCrossDetails() {
                 </View>
               ) : null}
             </View>
+            </>
           )}
 
           {/* ACTIONS: EDIT & DELETE */}
@@ -1451,7 +1525,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 11,
     fontSize: 15,
-    color: "#263238",
+    fontWeight: "500",
+    color: "#0F172A",
   },
   multilineWrapper: {
     paddingVertical: 10,
